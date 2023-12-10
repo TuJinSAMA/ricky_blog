@@ -1,0 +1,44 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-09-02',
+  title: '高阶函数',
+  description:
+    '如果一个函数接受另一个函数作为参数，或者一个函数返回值是一个函数，那么我们就称该函数为高阶函数。',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 什么是高阶函数
+如果一个函数接受另一个函数作为参数，或者一个函数返回值是一个函数，那么我们就称该函数为高阶函数
+## JavaScript中常见的高阶函数
+forEach、map、reduce、filter
+## 编写自己的高阶函数
+需要注意的就是保持纯函数和减少函数副作用。
+找出对象中符合要求的属性名
+```javascript
+//自定义
+var obj = {
+    num1: 1,
+    num2: 2,
+    num3: 3,
+    num4: 4,
+    num5: 5,
+    num6: 6
+}
+
+function findProperty(obj, fn) {
+    var _obj = Object.create(obj);
+    var _propertyArr = [];
+    for (var item in obj) {
+        if (fn.call(obj, obj[item], item)) {
+            _propertyArr.push(item);
+        }
+    }
+    return _propertyArr;
+}
+findProperty(obj, (value, name) => {
+    return value % 2 == 0;
+})
+```
