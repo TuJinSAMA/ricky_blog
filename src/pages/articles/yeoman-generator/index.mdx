@@ -1,0 +1,499 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import npmImg from './npm.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2023-04-17',
+  title: '从0-1手写一个Yeoman Generator, 拯救你的重复工作!',
+  description:
+    '平时我们经常需要创建新的项目或者模块，每次手动创建的过程比较繁琐且容易出错。虽然 Yeoman 已经提供了很多现成的 Generator，但是对于一些特殊的需求，我们可能需要自定义Generator。而且，手动实现一个 Yeoman Generator 也是一种非常好的学习和实践方式，可以让我们更深入地理解前端工程化和脚手架工具的实现原理。下面就让我带你一起实现一个可以快速生成 Vue 或 React 项目的 Generator。',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## Yeoman Generator 是什么？
+Yeoman 是一个基于 Node.js 的脚手架工具，可以帮助前端开发者快速创建和搭建项目的基础结构，并提供了自动化的构建、测试和打包等功能，可以大大提高开发效率和代码质量。简单来说，Yeoman 是一个类似于 Vue CLI、Create React App 等脚手架工具的框架，而 Yeoman Generator 则是用于创建和管理 Yeoman 项目的具体实现。Yeoman 提供了很多现成的 Generator，开发者可以直接使用，也可以在已有的Generator基础上扩展和修改；同时，开发者也可以根据自己的需求编写自定义的 Generator，再通过 Yeoman 进行管理和使用。
+## 为什么要使用 Yeoman Generator
+平时我们经常需要创建新的项目或者模块，每次手动创建的过程比较繁琐且容易出错。虽然 Yeoman 已经提供了很多现成的 Generator，但是对于一些特殊的需求，我们可能需要自定义Generator。而且，手动实现一个 Yeoman Generator 也是一种非常好的学习和实践方式，可以让我们更深入地理解前端工程化和脚手架工具的实现原理。下面就让我带你一起实现一个可以快速生成 Vue 或 React 项目的 Generator。
+## 准备工作
+
+1. 首先你需要创建一个空项目文件
+```bash
+ mkdir generator-tiny-web
+ cd .\generator-tiny-web\
+```
+
+2. 使用 npm 或 yarn 初始化 `package.json` 
+```bash
+yarn init -y
+```
+
+3. 添加核心依赖 `yeoman-generator` 
+```bash
+npm install yeoman-generator
+# or
+ yarn add yeoman-generator
+```
+
+4. 修改 `package.json` 文件，官方规定包名必须为 `generator-xxx`，添加关键词"yeoman-generator"，这样才能在官方的 generator 列表中搜到你的 generator。
+```json
+{
+  "name": "generator-tiny-web",
+  "version": "1.0.0",
+  "description": "Yeoman Generator",
+  "author": {
+    "name": "gongyuqi",
+    "email": "gong_yu_qi@163.com",
+    "url": "https://github.com/TuJinSAMA"
+  },
+  "files": [
+    "generators"
+  ],
+  "license": "MIT",
+  "repository": "TuJinSAMA/generator-tiny-web",
+  "keywords": [
+    "yeoman-generator"
+  ],
+  "dependencies": {
+    "yeoman-generator": "^5.8.0"
+  }
+}
+
+```
+## 编写 Generator
+
+1. 项目内的基本结构如下：
+```bash
+/
+├── generators/
+│   └── app/
+│       └── templates/
+│       └── index.js
+├──node_modules/
+├──package.json
+```
+当你使用一个 Generator 时会默认执行 `app/` 下的文件代码。而 Yeoman 也可以使用 `yo tiny-web:xxx`去执行一个子命令，假设你有一个子命令，那么文件结构需要这样变化：
+```bash
+/
+├── generators/
+│   └── app/
+│       └── templates/
+│       └── index.js
+│   └── test/
+│       └── index.js
+├──node_modules/
+├──package.json
+```
+当使用 `yo tiny-web:test` 命令时，则执行的是 `test/` 下的文件。
+
+2. `app/index.js` 文件是执行 Generator 时的主要入口文件，该文件默认暴露一个类，该类继承自 `yeoman-generator`
+```typescript
+const Generator = require('yeoman-generator');
+
+module.exports = class extends Generator {
+  prompting() {
+    // prompting 方法是用来和用户交互并获取用户输入数据的
+  }
+  writing() {
+    // 在文件生成阶段调用 writing 这个方法
+  }
+  end() {
+    // 整体流程结束后调用
+  }
+}
+```
+
+3. 接下来我们先完善 `prompting()`中的逻辑，因为我们是快速搭建一个 Vue 或 React 项目，所以要和用户交互让用户自行选择。
+```javascript
+const Generator = require('yeoman-generator');
+
+module.exports = class extends Generator {
+  
+  prompting() {
+    // 调用父类封装好的 prompt() 方法可以设置交互
+    // 该方法本身返回的是一个 promise 并接收一个数组 数组内是每一项交互的配置数据
+    return this.prompt([
+      {
+        type: 'input',
+        name: 'projectName',
+        message: 'Your project name:',
+        default: 'tiny-web',
+      },
+      {
+        type: 'list',
+        name: 'libType',
+        message: `What lib do you need?`,
+        default: 0,
+        choices: ['react', 'vue'],
+      },
+    ]).then(answers => {
+      this.answers = answers;
+    })
+  }
+  
+}
+```
+在上面我们调用了父类封装好的`prompt()` 方法进行用户交互，而 Yeoman 内部的实现其实就是依赖 Inquirer 的，更多的交互方式可以参考 Inquirer 的 [API](https://github.com/SBoudrias/Inquirer.js) 。
+我们让用户自己输入项目的名称以及选择是 Vue 还是 React ，在 `then()` 回调中把得到的数据挂在到 `this.answers` 上。
+
+4. 准备模板文件
+
+接下来我们在 `templates/` 中准备模板文件，这些文件最后会生成在用户的新项目中。模板文件结构如下：
+```json
+templates
+├── src/
+│   └── style/
+│       └── index.styl
+│   └── App.jsx
+│   └── App.vue
+│   └── index.js
+├── .gitignore
+├── babel.config.js
+├── package.json
+├── server.js
+├── webpack.config.client.js
+├── webpack.config.server.js
+```
+各文件内容如下：
+```css
+/* templates/src/style/index.styl */
+* 
+	margin 0
+	padding 0
+```
+```jsx
+// templates/src/App.jsx
+import React from 'react';
+
+const App = () => {
+  return (
+    <h1>Hello React!</h1>
+  )
+}
+
+export default App;
+```
+```html
+<!-- templates/src/App.vue -->
+<template>
+  <h1>Hello Vue!</h1>
+</template>
+```
+```javascript
+// templates/src/index.js
+<% if (libType === 'react') { -%>
+  import React from 'react';
+	import ReactDOM from 'react-dom/client';
+  import App from './App';
+  import './style/index.styl';
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+<% } else { -%>
+	import { createApp } from 'vue'
+	import App from './App';
+	import './style/index.styl';
+
+	const app = createApp(App)
+	app.mount('#root')
+<% } -%>
+```
+整个 `templates/` 下的文件都支持 [ejs](https://ejs.devjs.cn/) 模板引擎，可以通过判断的形式生成不同的代码。
+```javascript
+// templates/.gitignore
+/dist
+/build
+/node_modules
+.Ds_Store
+```
+```javascript
+// templates/babel.config.js
+module.exports = {
+  <% if (libType === 'react') { -%>
+  presets: ["@babel/preset-env", "@babel/preset-react"]
+  <% } else { -%>
+  presets: ["@babel/preset-env"]
+  <% } -%>
+}
+```
+```json
+// templates/package.json
+{
+  "name": "<%= projectName %>",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start": "concurrently \"npm:dev:*\"",
+    "dev:client-compile": "webpack --config webpack.config.client.js --watch",
+    "dev:server-compile": "webpack --config webpack.config.server.js --watch",
+    "dev:server": "nodemon ./build/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.19.3",
+    "@babel/preset-env": "^7.19.4",
+    <% if (libType === 'react') { -%>
+    "@babel/preset-react": "^7.18.6",
+    <% } else { -%>
+    "vue-loader": "^17.0.1",
+    "@vue/compiler-sfc": "^3.2.47",
+    <% } -%>
+    "babel-loader": "^8.2.5",
+    "css-loader": "^6.7.1",
+    "nodemon": "^2.0.20",
+    "concurrently": "^8.0.1",
+    "style-loader": "^3.3.1",
+    "stylus": "^0.59.0",
+    "stylus-loader": "^7.1.0",
+    "webpack": "^5.74.0",
+    "webpack-cli": "^4.10.0",
+    "webpack-node-externals": "^3.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    <% if (libType === 'react') { -%>
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+    <% } else { -%>
+    "vue": "^3.2.47"
+    <% } -%>
+  }
+}
+```
+```javascript
+// templates/server.js
+import express from 'express';
+
+const app = express();
+
+app.use(express.static('dist'));
+
+const template = `
+<html>
+  <head>
+    <title><%= projectName %></title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="bundle.js"></script>
+  </body>
+</html>
+`;
+
+app.get('*', (req, res) => {
+  res.send(template);
+})
+
+app.listen(3000, () => console.log('server is running ...'))
+```
+```javascript
+// templates/webpack.config.client.js
+const path = require('path');
+<% if (libType === 'vue') { -%>
+const { VueLoaderPlugin } = require('vue-loader');
+<% } -%>
+
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'bundle.js'
+  },
+  devtool: 'source-map',
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: {
+          loader: 'babel-loader'
+        }
+      },
+    <% if (libType === 'react') { -%>
+      {
+        test: /\.jsx$/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-react']
+          }
+        }
+      },
+    <% } else { -%>
+      {
+        test: /\.vue$/,
+        use: ['vue-loader']
+      },
+    <% } -%>
+      {
+        test: /\.styl$/,
+        exclude: /node_modules/,
+        use: [
+          'style-loader',
+          'css-loader',
+          'stylus-loader'
+        ]
+      }
+    ]
+  },
+  resolve: {
+  <% if (libType === 'react') { -%>
+    extensions: ['.js', '.jsx'],
+  <% } else { -%>
+    extensions: ['.js', '.vue'],
+  <% } -%>
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
+<% if (libType === 'vue') { -%>
+  plugins: [new VueLoaderPlugin()]
+<% } -%>
+  
+}
+```
+```javascript
+// templates/webpack.config.server.js
+const path = require('path');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = {
+  target: 'node',
+  mode: 'development',
+  entry: './server.js',
+  output: {
+    path: path.resolve(__dirname, 'build'),
+    filename: 'server.js'
+  },
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: ['babel-loader']
+      }
+    ]
+  },
+  externals: [nodeExternals()]
+}
+```
+至此，我们的所有模板文件都准备好了，接下来我们需要在 `index.js` 中完善剩下的逻辑。
+
+5. 完善 `index.js` 中写入文件的逻辑。
+```javascript
+const Generator = require('yeoman-generator');
+
+const fileList = [
+  'package.json',
+  '.gitignore',
+  'server.js',
+  'webpack.config.client.js',
+  'webpack.config.server.js',
+  'babel.config.js',
+  'src/index.js',
+  'src/style/index.styl'
+]
+
+const getFileList = libType => {
+  const rootComponent = libType === 'react' ? 'src/App.jsx' : 'src/App.vue'
+  return [...fileList, rootComponent]
+}
+
+module.exports = class extends Generator {
+  prompting() {
+    // 调用内置的 prompt() 方法可以设置交互
+    // 该方法本身返回的是一个 promise 并接收一个数组 数组内是每一项交互的配置数据
+    return this.prompt([
+      {
+        type: 'input',
+        name: 'projectName',
+        message: 'Your project name:',
+        default: 'tiny-web',
+      },
+      {
+        type: 'list',
+        name: 'libType',
+        message: `What lib do you need?`,
+        default: 0,
+        choices: ['react', 'vue'],
+      },
+    ]).then(answers => {
+      this.answers = answers;
+      console.log(this.answers)
+    })
+  }
+  // 在生成文件阶段时会执行 writing() 这个方法来写入文件到用户本地
+  writing() {
+    // 可以调用父类封装好的 fs 模块上的方法写入文件。
+    // destinationPath() 方法可以获得当前项目的路径
+    // 获取交互得到的数据
+    const context = this.answers
+    getFileList(context.libType).forEach(path => {
+      // 模板文件路径
+      const tplPath = this.templatePath(path)
+      // 输出文件路径
+      const outputPath = this.destinationPath(`${context.projectName}/${path}`)
+      this.fs.copyTpl(tplPath, outputPath, context)
+    })
+  }
+// 在所有流程结束后 执行end()方法 
+  end() {
+    const endSentence = `
+    generator success!
+        next:
+        1. cd ${this.answers.projectName}
+        2. npm install
+        3. npm run start
+    `;
+    console.log(endSentence)
+  }
+}
+```
+我们在 `writing()` 方法中，首先获取了用户交互后的数据，然后通过 `getFileList()` 方法获取到了所有模板文件的路径集合，遍历这个集合就相当于遍历我们的模板文件，再将模板文件通过 `this.fs.copyTpl()` 方法写入到用户本地。
+至此我们的生成阶段就结束了，最后我们可以在 `end()` 方法中，提示用户生成已经成功，指引用户顺利启动我们生成的项目。
+## 发布 npm 包
+在把你的项目上传到 Github 后，就可以发布到 npm 了，如果你没有 npm 账号，那么要先去[官网](https://www.npmjs.com/)注册一个。
+如果你有账号，那就可以进行发布了。
+
+1. 检查 npm 镜像源地址，如果你的源地址不是官方的，那就需要先暂时切换回官方源地址。
+```bash
+# 查看 npm 镜像源地址
+npm config get registry
+
+# 切换回官方镜像
+npm config set registry https://registry.npmjs.org/
+```
+
+2. 在终端中进入到项目的根目录下，运行登录命令，按照终端提示输入用户名和密码即可：
+```bash
+# 登陆
+npm login
+
+#控制台会提示输入相关信息
+Log in on https://registry.npmjs.org/
+Username:  # 用户名
+Password: # 密码
+Email: (this IS public) # 邮箱
+Enter one-time password: # 有可能要你输入邮箱验证码
+Logged in as xxx on https://registry.npmjs.org/. # 登陆成功
+```
+
+3. 运行发布命令
+```bash
+# 发布命令
+npm publish
+```
+发布成功后就可以去官网看自己的包了~ 记得可以添加 `README.md`文件，说明下你的 Generator 要怎么使用，这样会更友好一些。
+<Image src={npmImg} alt="" />
+## 总结
+至此，我们已经探讨了 Yeoman Generator 的基本概念和使用方法，以及如何通过手写代码创建自己的Generator。我们还介绍了如何使用 npm 将自己的 Generator 包发布到 npm 仓库，以便其他人可以使用它来生成自己的项目。
+
+我是荼锦，一个兴趣使然的开发者，非常感谢您阅读本文，希望本文对您了解如何从0-1手写一个 Yeoman Generator 有所帮助。
+
+尽管我们在本文中尽可能地详细介绍了每一个步骤和细节，但是难免会存在一些错误和不足之处。如果您在使用本文中介绍的方法时发现了任何错误或者有更好的方法，非常欢迎您指正并提出建议，以便我们能够不断改进和提升文章的质量。
+再次感谢您的阅读，希望本文对您有所帮助！
