@@ -1,0 +1,243 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import stackGif from './stackGif.gif'
+import heapImg from './heapImg.png'
+import xsdgcStep1 from './xsdgcStep1.gif'
+import xsdgcStep2 from './xsdgcStep2.gif'
+import xsdgcStep3 from './xsdgcStep3.gif'
+import lsdgcStep1 from './lsdgcStep1.gif'
+import lsdgcStep2 from './lsdgcStep1.gif'
+import lsdgcStep3 from './lsdgcStep1.gif'
+import testMemory1 from './testMemory1.gif'
+import testMemory2 from './testMemory2.gif'
+import checkMemory from './checkMemory.png'
+import checkMemoryfornode from './checkMemoryfornode.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-06-01',
+  title: '浅谈JavaScript中的内存管理',
+  description:
+    '虽然 JavaScript 的内存是由引擎自动管理的，但是实际编码过程中，如果编码不当，依然会造成内存泄露。本文主要介绍了 JavaScript 的内存管理机制，同时介绍了 V8 引擎的内存设计及管理，最后会提到一些优化内存的建议。',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 前言
+
+虽然 JavaScript 的内存是由引擎自动管理的，但是实际编码过程中，如果编码不当，依然会造成内存泄露。本文主要介绍了 JavaScript 的内存管理机制，同时介绍了 V8 引擎的内存设计及管理，最后会提到一些优化内存的建议。如果你有其他建议，欢迎提出交流。
+
+## 为什么要管理内存
+
+#### 浏览器端
+
+管理内存可以减少浏览器的负担，内存占用过大会让浏览器压力过大，导致浏览器卡顿，用户体验就很差，试想如果你在浏览网页时，如果卡顿的像 PPT 一样逐帧播放，那你肯定不想再继续浏览了。
+
+#### Node 端
+
+众所周知我们可以用`nodejs`来写接口、提供服务。如果`nodejs`开启的服务内存不够，服务就会中断，整个宕掉，用户就请求不到任何接口，你的网站就会瘫痪，这是很糟糕的情况。
+
+## 内存的数据储存
+
+JavaScript 的数据是储存在堆和栈中的。
+
+#### 栈
+
+普通数据类型储存在栈中，例如：`string`、`number`、`boolean`。
+栈就像是只有一个开口的光盘容器，你可以把数据想象成光盘，你最先放进去的光盘是在栈底，而你最后放进去的光盘是在栈顶，所以栈遵循了先进后出的原则。
+
+<Image src={stackGif} alt="" />
+
+#### 堆
+
+引用数据类型储存在堆中，例如：`object`、`function`、`array`。
+在我们声明引用数据类型时，会先在堆内开辟一块空间去存放数据，而栈中储存的其实是一个地址，这个地址指向堆内具体的某一块空间。所以当我们进行变量赋值时，如果等式右边的变量是一个引用类型，那其实是将这个变量储存在栈中的地址赋值给了等式左边的变量，就像下图的`clonePerson`。
+
+<Image src={heapImg} alt="" />
+
+## V8 内存的管理
+
+### V8 引擎的内存到底有多大
+
+- 64 位下是 1.4G
+- 32 位下是 700MB
+- 根据浏览器不同，会有些许扩容。Node 端会有一些 C++的内存扩容。
+
+#### 为什么设计为 1.4G
+
+1. 对于浏览器脚本语言，1.4G 的内存足够用了。
+1. 垃圾回收的时候是阻塞式(全停顿)的，也就是进行垃圾回收的时候会中断代码的执行，如果内存很大存放很多数据的时候，清理整理起来就会更耗费时间，被阻塞时间也就会相应的增加，这肯定是我们不希望出现的。
+
+### 新生代和老生代
+
+V8 将堆内存分为两块区域，分别是新生代和老生代。
+
+#### 新生代
+
+短时间存活的新变量会存在新生代中，新生代的内存量极小，64 位下大概是 32MB。
+
+#### 新生代回收算法
+
+新生代的回收算法，可以简述为复制-清空，把存活着的变量复制到 to 空间，然后把 from 空间清空，然后对调 from 和 to。这样可以提升回收速度，典型的牺牲空间换时间。
+这么说可能有点抽象，让我们看下面这组 gif 图：
+
+1. 将存活的变量复制到 to 空间。
+
+<Image src={xsdgcStep1} alt="" />
+
+1. 将 from 空间清空。
+
+<Image src={xsdgcStep2} alt="" />
+
+3. 将 from 和 to 空间对调。
+
+<Image src={xsdgcStep3} alt="" />
+
+#### 老生代
+
+生存时间比较长的变量，会转存到老生代，老生代占据了几乎所有内存。64 位下大概是 1400MB。
+
+#### 老生代回收算法
+
+老生代的回收算法，可以简述为标记-清除-整理磁盘，先是会将所有活动的变量打上标记，之后清除没有标记的变量，最后再整理磁盘。如果内存占用比较多，V8 会使用增量标记的策略。
+
+因为标记的过程中如果时间太长，用户就会感觉到卡顿，所以增量标记就是先标记一部分，然后将线程资源让出来执行 JS 代码，后续再分批次的进行标记。
+
+还是用一组 gif 图来演示一下：
+
+1. 标记活动变量，从根开始递归遍历，根据变量的可达性进行标记。
+
+<Image src={lsdgcStep1} alt="" />
+
+2. 没有标记到的变量视为垃圾，进行清除，同时会将上一轮的标记清除，方便下次 GC。
+
+<Image src={lsdgcStep1} alt="" />
+
+3. 整理磁盘。
+
+<Image src={lsdgcStep1} alt="" />
+最后一步为什么要整理磁盘呢？ 其实在第二步回收变量的时候会记录这些被回收变量的地址信息，方便下次有新对象时可以直接分配使用，但多次回收后原本连续的内存块会被分割，变得比较零散，也就是我们常说的内存碎片。但`array`类型的数据储存必须要占用连续的内存空间，所以当内存碎片过多时，V8
+会整理磁盘，将所有的变量复制到连续的内存空间以提高内存利用效率。
+
+## 什么样的变量是可以回收的
+
+- 全局变量会直到程序执行完毕才会回收。
+- 普通变量通常有两种方法：引用计数法和访问可达法
+  1.  引用计数法：当一个对象的引用次数为 0 时，则认为该对象是可以被回收的。但是存在循环引用问题。
+  1.  访问可达法：从根对象(window/global)出发，递归遍历子对象，访问不到的对象就认为是可以被回收的。
+
+## 什么时候触发垃圾回收
+
+1. 在 JavaScript 执行完一次同步代码时，也就是 EventLoop 完成一次事件循环时会进行垃圾回收。
+
+```typescript
+function testMemory() {
+  var memory = process.memoryUsage().heapUsed //node提供的可以查看已用内存的API
+  console.log(memory / 1024 / 1024 + 'MB') //返回的单位为bit 所以要进行转换
+}
+var size = 30 * 1024 * 1024
+var arr1 = new Array(size)
+testMemory()
+setTimeout(() => {
+  var arr5 = new Array(size)
+  testMemory()
+  var arr6 = new Array(size)
+  testMemory()
+  //回收一次
+}, 1000)
+//回收一次
+```
+
+让我们执行上面这段代码，来看看内存的变化：
+
+<Image src={testMemory1} alt="" />
+可以看到在执行异步代码时，已经进行过一次垃圾回收了。
+
+> `node --max-old-space-size=1000`可以手动设置 node 老生代内存量，单位为 MB。
+
+2. 极端情况下，如果当内存不够的时候，会主动触发回收。
+
+```typescript
+function testMemory() {
+  var memory = process.memoryUsage().heapUsed //node提供的可以查看已用内存的API
+  console.log(memory / 1024 / 1024 + 'MB') //返回的单位为bit 所以要进行转换
+}
+var size = 30 * 1024 * 1024
+var arr1 = new Array(size)
+testMemory()
+var arr2 = new Array(size)
+testMemory()
+;(function () {
+  var arr3 = new Array(size)
+  testMemory()
+  var arr4 = new Array(size)
+  testMemory()
+})()
+var arr5 = new Array(size)
+testMemory()
+var arr6 = new Array(size)
+testMemory()
+```
+
+让我们执行上面这段代码，来看看内存的变化：
+
+<Image src={testMemory2} alt="" />
+可以看到在 1201MB 的时候，内存已经到达极限了(我们设置的大小是 1000，会有些许的扩容)，这时候会主动触发一次垃圾回收。
+
+## 新生代和老生代如何转化
+
+新生代在把活动的对象从 from 复制到 to 的时候，发现本次复制后，占用了超过 25%的 to 空间，这个时候认为需要把新生代空间内的对象转化到老生代。那需要把哪些新生代的对象转化为老生代呢？如果这个对象已经经历过一次[新生代回收](#新生代和老生代)，那么就会被转化到老生代。
+
+## 如何检测内存
+
+### 浏览器端
+
+可以在浏览器控制台打印`window.performance.memory`对象查看。
+
+<Image src={checkMemory} alt="" />
+字段说明(单位：bit)：
+
+- `usedHeapSize`：已经使用的堆内存。
+- `totalHeapSize`：总堆内存。
+- `jsHeapSizeLimit`：内存限制量。
+
+这种方法有个弊端，那就是只能查看当前状态下的内存，而不能看到整个代码运行过程中的内存变化，比较有局限性。
+
+### Node 端
+
+使用`nodejs`中全局模块提供的 API：`process.memoryUsage();`
+
+```typescript
+console.log(process.memoryUsage())
+```
+
+打印后：
+
+<Image src={checkMemoryfornode} alt="" />
+字段说明(单位：bit)：
+
+- rss：node 总占用内存 V8 和`C++`代码占用内存的总和。
+- heapTotal：堆总内存。
+- heapUsed：堆已使用内存。
+- external：`C++`分配的额外内存。
+- arrayBuffers：`ArrayBuffer`占用内存。
+  > `ArrayBuffer`对象：代表内存之中的一段二进制数据，可以通过“视图”进行操作。“视图”部署了数组接口，这意味着，可以用数组的方法操作内存。
+
+## 如何优化内存
+
+1. 尽量不要定义全局变量，如果定义了及时手动释放 变量的引用为`null`或者`undefined`。
+1. 注意闭包，如果用到闭包函数要注意做好限制。
+1. 操作完 DOM 后，及时解除对 DOM 节点的引用，即赋值`null`。释放 DOM 时，移除 DOM 节点上的事件监听。
+1. 事件监听函数处理完成后，及时移除事件监听。类似的还有`setInterval`和`setTimeout`函数。
+
+注意：
+`setInterval`运行期间，入参对象始终都会被定时器引用。
+`setTimeout`在触发回调之后，会解除入参对象的引用。
+
+### Node 端的一些特殊点
+
+Node 端可以手动触发垃圾回收： `global.gc()`
+Node 端可以手动设置内存 ：
+
+- 老生代 `node --max-old-space-size=1700`
+- 新生代 `node --max-new-space-size=1024`

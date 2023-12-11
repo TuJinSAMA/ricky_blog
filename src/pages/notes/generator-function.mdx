@@ -1,0 +1,82 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-11-15',
+  title: 'Generator函数',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 简介
+
+Generator 函数是 ES6 提供的一种异步编程解决方案，语法行为与传统函数完全不同。
+它可以有多个角度去理解，首先可以把它理解成一个状态机，封装了很多内部状态。同时 Generator 函数又返回一个遍历器对象（Iterator），也就是说，除了是状态机，它还可以是一个遍历器生成函数。返回的这个遍历器对象可以依次遍历 Generator 内部的每一个状态。
+语法上，Generator 是个函数，但与传统函数不同，一是，`function`关键字后和函数名前会有一个`*`符号；二是，函数体内部使用`yield`表达式，定义不同的状态。（ yield 在英文中意为"产出" ）
+
+```typescript
+function* gen() {
+  yield 'hello'
+  yield 'generator'
+  return 'ok'
+}
+const g = gen()
+```
+
+上面定义了一个 Generator 函数 `gen`，这个函数内部有两个`yield`表达式（"hello"和"generator"），所以该函数有三个状态：hello、world 和 return (结束执行)语句。然后我们调用了 `gen` 函数，调用 Generator 函数和普通函数一样，直接在函数名称后面加上圆括号就行，不同的是，调用 Generator 函数并不会执行函数内部的语句，也不会返回函数运行的结果，而是会返回一个指向内部状态的遍历器对象（Iterator）。
+下一步我们就必须要调用遍历器对象的 `next`方法，使得指针移向下一个状态。每调用一次 `next` 方法，内部指针就从函数头部或上一次暂停的地方开始执行，直到遇见 `yield` 或 `return` 表达式才会停下。所以可以理解为 Generator 函数是分段执行的，`yield` 可以暂停函数的执行，而 `yield` 可以恢复执行。
+
+```typescript
+g.next()
+// { value: "hello", done: false }
+
+g.next()
+// { value: "generator", done: false }
+
+g.next()
+// { value: "ok", done: true }
+
+g.next()
+// { value: undefined, done: true }
+```
+
+上面我们调用了四次 `next` 方法，每次调用都会返回一个对象，对象内部包含了 `value` 和 `done` 两个属性，其中 `value` 是当前 `yield` 后表达式的值，而 `done`是一个布尔值，表示是否遍历结束。可以看到当第三次调用的时候，`done` 属性是 `true` 表示遍历结束，并且将 `return` 表达式后面的值返回。第四次再去调用的时候，返回的 `value` 就是 `undefined` 了。以后再调用 `next` 方法，返回的都将是这个值。
+总结一下，调用 Generator 函数，返回一个遍历器对象，代表 Generator 函数的内部指针。以后，每次调用遍历器对象的 `next` 方法，就会返回一个有着 `value` 和 `done` 两个属性的对象。`value` 属性表示当前的内部状态的值，是 `yield` 表达式后面那个表达式的值；`done` 属性是一个布尔值，表示是否遍历结束。
+
+## 异步编程应用
+
+上面提到 Generator 是一种异步解决方案，下面举一个简单的例子：
+
+```typescript
+function* gen() {
+  const { data } = yield axios.get('/json/url.json')
+  console.log(data)
+  const result = yield axios.get(data.user)
+  console.log(result.data)
+}
+
+function run(generator) {
+  const _g = generator()
+
+  function next(data) {
+    let _result = _g.next(data)
+    if (_result.done) return _result.value
+    _result.value.then((res) => {
+      return next(res)
+    })
+  }
+  return next()
+}
+
+run(gen)
+// {"user": "/json/user.json"}
+// [{"name": "zs","age": 19}, {"name": "ww","age": 22}]
+```
+
+上面请求了两个 JSON 文件来模拟网络请求，第一个文件返回一个对象，对象内的 `user` 属性存放着下一个网络请求的 url。同时定义了一个自动执行器 `run` 函数用来自动执行 `gen` 函数，这个 `run` 函数接收一个 Generator 函数，先执行 Generator 函数得到遍历器对象， 然后定义一个 `next` 函数，在该函数内，接收一个`data` 作为执行遍历器对象的 `next` 方法时的实参，首先执行遍历器对象的 `next` 方法，然后判断是否遍历完成了，如果没有则继续递归执行。
+注意，这里的自动执行器只能支持 `yield` 表达式后面是 Promise 的情况，不支持其他情况。
+
+## 其他
+
+Generator 是协程的一种实现，它是完全交由程序员自己来管理的。如果你熟悉 ES7 的 `async`、`await`，你会发现 Generator 函数的语法和它非常像，没错，`async`、`await` 的底层就是 Generator + Promise + 自动执行器实现的。你可以简单理解为 Generator 的语法糖，也被大家经常说是前端异步编程的终极解决方案。

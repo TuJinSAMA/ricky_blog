@@ -1,0 +1,55 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2021-09-03',
+  title: '关于Vue中更新数据视图不更新的几种解决方法',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+数据驱动视图一直是 Vue 的两大核心之一，在开发中我经常会遇到数据更新了但是视图没有更新的情况，多数情况下是因为更改的数据并没有被 Vue 劫持到，从而无法触发 getter/setter，关于 Vue 的响应式原理就不过多解释了，官方文档有很好的说明链接放在下面了。我统计了几种常用的方法用于解决更新数据后视图没更新的情况，在下面作以记录。
+
+> Vue 深入响应式原理官方文档：[https://cn.vuejs.org/v2/guide/reactivity.html](https://cn.vuejs.org/v2/guide/reactivity.html)
+
+解决方案：
+
+```javascript
+//在Vue中多半是某个对象动态添加的属性没有被劫持到
+//可以使用Vue.set()或者$set()手动将数据添加到劫持列表里
+data(){
+  return {
+  	obj: {
+  		name: 'zs',
+  	},
+  }
+};
+methods:{
+  handle(){
+  	this.obj.name = 'ls'; //触发响应式
+    this.obj.age = 18; //不触发视图更新
+    // 1.使用 set()
+    // $set 方法接收三个参数 第一个为要增加属性的对象 第二个为新增属性的key 第三个为新增属性的value
+    this.$set(this.obj, 'age', 18);
+
+   	// 2.可直接赋值  更改已经被监听对象的内存地址 即可触发setter
+    this.obj = {
+    	...this.obj,
+      age: 18
+    }
+
+    // 3. 使用Object.assign 拷贝对象中可枚举的属性
+    // 个人认为这种写法和第二种差不多
+    Object.assign(this, {
+    	obj:{
+      	...this.obj,
+        age: 18,
+      }
+    });
+    // 也可以使用这种方法
+    this.obj = Object.assign({}, this.obj, {age: 18});
+  }
+
+};
+```

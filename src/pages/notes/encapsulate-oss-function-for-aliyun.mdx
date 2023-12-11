@@ -1,0 +1,150 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-02-16',
+  title: 'uni-app&小程序 封装阿里云OSS直传函数',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 前言
+
+因为小程序端上传文件到服务器的方法与 Web 端不同，所以需要封装一个小程序直传到阿里云 OSS 的函数。
+
+## 引入依赖文件
+
+在项目中新建一个 cypto 文件夹，里面放入需要依赖的 js 文件以及暴露生成签名方法的 js 文件。
+具体文件可以直接去我的 git 仓库下载下来：
+gitee: [https://gitee.com/gong_yu_qi/applet-oss/tree/master](https://gitee.com/gong_yu_qi/applet-oss/tree/master)
+github: [https://github.com/TuJinSAMA/applet-oss](https://github.com/TuJinSAMA/applet-oss)
+在 cypto 文件夹中有一个 upload.js 文件，是生成签名的文件，之前提到的方法也要从这个文件中暴露出去
+
+```javascript
+// upload.js
+const Base64 = require('./Base64.js')
+require('./hmac.js')
+require('./sha1.js')
+const Crypto = require('./crypto.js')
+// 计算签名。
+function computeSignature(accessKeySecret, canonicalString) {
+  const bytes = Crypto.HMAC(Crypto.SHA1, canonicalString, accessKeySecret, {
+    asBytes: true,
+  })
+  return Crypto.util.bytesToBase64(bytes)
+}
+
+const date = new Date()
+date.setHours(date.getHours() + 1)
+const policyText = {
+  expiration: date.toISOString(), // 设置policy过期时间。
+  conditions: [
+    // 限制上传大小。
+    ['content-length-range', 0, 50 * 1024 * 1024], //限制大小 50M
+  ],
+}
+
+export function getFormDataParams(credentials) {
+  const policy = Base64.encode(JSON.stringify(policyText)) // policy必须为base64的string。
+  const signature = computeSignature(credentials.AccessKeySecret, policy)
+  const formData = {
+    OSSAccessKeyId: credentials.AccessKeyId,
+    signature,
+    policy,
+    'x-oss-security-token': credentials.SecurityToken,
+  }
+  return formData
+}
+```
+
+## 封装上传函数
+
+在项目中可以新建一个 utils 工具文件夹，在里面创建 upload.js 文件，封装好上传的方法并暴露出去即可。
+
+```javascript
+import { apiBusinessService } from '@/services/http/business.js'
+import { getFormDataParams } from '../cypto/upload' // 这里注意路径
+
+export function uploadFile(filePathList) {
+  // 先获取ossToken
+  // 后端需要提供一个获取OSS Token的接口
+  return apiBusinessService
+    .ossToken()
+    .then(({ data }) => {
+      return uploadFileToWx(data, getFormDataParams(data), filePathList)
+    })
+    .catch((err) => {
+      return new Error(err)
+    })
+}
+// 封装一个Promise 用来处理多文件依次上传
+function uploadFileToWx(oss, token, filePathList) {
+  return new Promise((resolve, reject) => {
+    const promises = filePathList.reduce((arr, item) => {
+      const p = batchUpload(item, oss, token)
+      return [...arr, p]
+    }, [])
+    Promise.all(promises)
+      .then((list) => {
+        resolve(list.map((item) => item.fileUrl))
+      })
+      .catch((err) => {
+        reject(err)
+      })
+  })
+}
+// 批量上传 返回一个远程文件链接地址的集合
+function batchUpload(file, oss, token) {
+  return new Promise((resolve, reject) => {
+    const url = `https://${oss.bucketName}.oss-cn-${oss.region}.aliyuncs.com`
+    const key = `${Date.now()}/${file.replace('wxfile://tmp_', '')}` //文件名替换前缀
+    // 这里是uni的api 换成微信官方的api同理
+    uni.uploadFile({
+      url,
+      filePath: file,
+      name: 'file',
+      formData: {
+        ...token,
+        key,
+        success_action_status: '200', //与OSS约定好上传成功的status
+      },
+      success(res) {
+        if (res.statusCode !== 200) {
+          return reject(res)
+        }
+        res.fileUrl = url + '/' + key
+        res.fileName = file.replace('wxfile://tmp_', '') //文件名替换前缀
+        resolve(res)
+      },
+      fail(err) {
+        reject(err)
+      },
+    })
+  })
+}
+```
+
+## 使用示例
+
+```javascript
+// 引入封装好的函数
+import { uploadFile } from '@/utils/upload/upload.js';
+// 某个事件触发函数
+handlePhotoUpload() {
+  // 以uni提供的选择图片api为示例
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['original', 'compressed'], // 可以指定是原图还是压缩图，默认二者都有
+    sourceType: ['album', 'camera'], // 从相册选择或拍照
+    success: res => {
+      uploadFile(res.tempFilePaths).then(res => {
+        if (res.length > 0){
+          // res:[] 就是远程文件链接的集合
+          console.log(res);
+        }
+      });
+    },
+  });
+},
+```

@@ -1,0 +1,60 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import dcloud from './dcloud.png'
+import distinction from './distinction.png'
+import create from './create.png'
+import cli from './cli.png'
+import api from './api.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-01-12',
+  title: 'uni-app 项目搭建',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## HBuilderX 搭建
+
+#### 1.下载 HBuilderX
+
+> 官网地址: [https://www.dcloud.io/hbuilderx.html](https://www.dcloud.io/hbuilderx.html)
+
+<Image src={dcloud} alt="" />
+<Image src={distinction} alt="" />
+
+#### 2. 新建 uni-app 项目
+
+HBuilderX 中，文件 --> 新建 --> 项目。
+
+<Image src={create} alt="" />
+默认模板为最基础的模板，干干净净，什么也没有。 也可以选择 uni-ui 项目模板，内部集成了
+uni-app 推荐使用的 ui 库，能够满足绝大部分业务场景使用。
+
+#### 3. 运行
+
+HBuilderX 中，运行 --> 运行到想要运行的模拟器即可。
+
+## Cli 搭建
+
+#### 1. 使用 `@vue/cli`搭建
+
+`vue create -p dcloudio/uni-preset-vue my-project`
+
+<Image src={cli} alt="" />
+
+#### 3. 运行
+
+`npm run dev:%PLATFORM%`
+`%PLATFORM%` 可取值如下
+
+<Image src={api} alt="" />
+
+## 个人建议
+
+整体项目搭建下来，我还是觉得 HbuilderX 搭建项目更友好一点，毕竟两者有点绑定的意思，使用 Cli 搭建的过程中遇到了很多坑，比较耽误时间精力。
+**目前我所使用的开发模式为，使用 Hbuilder 创建项目，并且运行，在微信开发者工具中调试，查看效果，在 vscode 中编辑代码，实时生效到微信开发者工具。**
+更多可以参考下面的官方文档。
+
+> uni-app 官方文档地址 [https://uniapp.dcloud.io/](https://uniapp.dcloud.io/)

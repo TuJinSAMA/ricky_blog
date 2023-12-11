@@ -1,0 +1,81 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-06-10',
+  title: '防抖和节流',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 防抖
+
+### 为什么要防抖
+
+有些操作是高频触发的，但其实触发一次就好了，就比如我们短时间内多次缩放页面，那么我们不应该每次缩放都去执行操作，应该只做一次就好。再比如监听输入框输入，不应该每次都去触发监听，应该是用户完成一段输入后，再进行触发。
+总结：等用户高频事件完了，再进行事件操作
+
+### 如何实现防抖
+
+事件触发--开启一个定时器--如果再次触发，则清除上一次的定时器，重新开一个--定时到，触发操作
+
+```javascript
+function debounce(fn, delay) {
+  let timer = null
+  return function () {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      fn.apply(this, arguments)
+    }, delay)
+  }
+}
+
+var inputdom = document.getElementById('inputid')
+inputdom.oninput = debounce(function (event) {
+  console.log(event.target.value)
+}, 500)
+```
+
+## 节流
+
+### 为什么要做节流
+
+防抖存在一个问题，事件会一直等到用户完成操作后一段时间再触发。如果一直操作，会一直不触发。如果这是一个按钮，点击就发送请求。如果一直点，那么请求就会一直不发出去。这里的正确思路应该是第一次点击就发送，然后上一个请求回来后，才能再次发送
+总结：某个操作希望上一次的完成再进行下一次，或者说希望隔一定时间触发一次。
+
+### 如何实现节流
+
+事件触发--操作执行--关闭阀门--阀门关闭，后续触发无效--一定时间后，阀门打开--操作可再次触发
+
+```javascript
+var inputdom = document.getElementById('inputid')
+function throttle(fn, delay) {
+  let valid = true
+  return function () {
+    if (valid) {
+      setTimeout(() => {
+        fn.apply(this, arguments)
+        valid = true
+      }, delay)
+      valid = false
+    } else {
+      return false
+    }
+  }
+}
+inputdom.oninput = throttle(function (event) {
+  console.log(event.target.value)
+}, 200)
+```
+
+## 总结
+
+### 防抖和节流相同点
+
+防抖和节流都是为了阻止用户操作高频触发事件，从而浪费性能。
+
+### 防抖和节流的区别
+
+防抖是让你多次触发，只生效最后一次。适用于我们只需要一次触发生效的场景。
+节流是让你的操作，每隔一段时间才能触发一次。适用于我们多次触发要多次生效的场景。

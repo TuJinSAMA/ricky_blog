@@ -1,0 +1,79 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import image1 from './1.png'
+import image2 from './2.png'
+import image3 from './3.png'
+import image4 from './4.png'
+import image5 from './5.png'
+import image6 from './6.png'
+import image7 from './7.png'
+import image8 from './8.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2023-02-17',
+  title: '使用IIS部署Vue应用',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 前言
+
+先说说背景，公司要求在内网环境下部署应用，并且只给了台 Windows 11 的笔记本... 奇怪的需求，但没关系，这个咱也会。本来是打算装 Windows 版 Docker 但我的 WorkStation 服务怎么都启动不了，无奈使用自带的 IIS 服务部署，项目是 Vue3 + Vite 打包后的应用，所以部署起来也简单。
+
+## 1- 启用 IIS 服务
+
+打开控制面板 --> 程序和功能 --> 启用或关闭 Windows 功能 --> 启用 Internet Information Services
+
+<Image src={image1} alt="" />
+<Image src={image2} alt="" />
+
+## 2- 创建网站
+
+在开始菜单中打开 IIS
+
+<Image src={image3} alt="" />
+
+在"网站"上右键，点击添加网站
+
+<Image src={image4} alt="" />
+<Image src={image5} alt="" />
+
+点击确定后，就可以去访问了。
+
+## 3- 配置 URL 重写规则
+
+如果你是 history 模式的路由规则，那么刷新页面后会 404，需要配置下 URL 重写规则，先看下你的 IIS 有没有安装这个功能。
+
+<Image src={image6} alt="" />
+如果你没有这个功能，去官网下载并安装即可：[下载地址](https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_zh-CN.msi)
+安装好后在你项目的 `public` 目录下新建一个 `Web.config` 文件，并添加以下内容： ```xml
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="Vue Router" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add
+              input="{REQUEST_FILENAME}"
+              matchType="IsDirectory"
+              negate="true"
+            />
+          </conditions>
+          <action type="Rewrite" url="/" />
+        </rule>
+      </rules>
+    </rewrite>
+  </system.webServer>
+</configuration>
+``` `public` 目录下的文件打包后会默认放在根目录
+
+<Image src={image7} alt="" />
+
+这样 IIS 就可以自动识别到这个重写规则
+
+<Image src={image8} alt="" />
+然后再进入网页试试，这样刷新就不会404了。

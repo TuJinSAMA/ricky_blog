@@ -1,0 +1,167 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-02-07',
+  title: 'uni-app项目中使用eslint+prettier校验代码格式',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 前言
+
+公司的项目一般都需要用到 eslint+prettier 来做代码格式校验，这样多人协作开发的项目可维护性更高。
+因为 uni-app 项目一般都是使用 HBuilder 创建的，所以并不会初始化 package.json 文件，所以我们就从初始化 npm 开始。
+
+## 初始化 npm 以及装包
+
+```javascript
+npm init -y
+```
+
+```javascript
+// 使用 npm 安装或者 yarn 安装都可以
+npm i prettier lint-staged husky eslint-plugin-vue eslint-plugin-prettier eslint babel-eslint @vue/eslint-config-prettier @vue/cli-plugin-eslint @vue/cli-plugin-babel @babel/eslint-parser -D
+```
+
+## 配置相关规则以及忽略文件
+
+在项目中根目录下创建 `.eslintrc.js` 文件，添加以下代码:
+
+```javascript
+module.exports = {
+  root: true,
+  globals: {
+    uni: 'readonly',
+    plus: 'readonly',
+    wx: 'readonly',
+    getCurrentPages: 'readonly',
+  },
+  env: {
+    browser: true,
+    node: true,
+    es6: true,
+  },
+  parserOptions: {
+    parser: '@babel/eslint-parser',
+    sourceType: 'module',
+    ecmaVersion: 6,
+    requireConfigFile: false,
+  },
+  extends: ['plugin:vue/essential', 'eslint:recommended', '@vue/prettier'],
+  rules: {
+    'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
+    'no-debugger': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
+    'no-unused-vars': 'off',
+    'vue/singleline-html-element-content-newline': 'off',
+    'vue/multiline-html-element-content-newline': 'off',
+    'vue/multi-word-component-names': 'off',
+    'vue/html-indent': 0,
+    'vue/html-closing-bracket-newline': 0,
+    'vue/html-self-closing': 0,
+    indent: 0,
+    semi: 0,
+    'comma-spacing': 0,
+    'space-before-blocks': 0,
+    'keyword-spacing': 0,
+    'key-spacing': 0,
+    'no-multiple-empty-lines': 0,
+    'spaced-comment': 0,
+    'space-before-function-paren': 0,
+    'arrow-spacing': 0,
+    'object-curly-spacing': 0,
+  },
+}
+```
+
+在项目中根目录下创建 `.eslintignore` 文件，添加以下代码:
+
+```markdown
+/node_modules
+
+# 忽略打包的文件
+
+/unpackage
+
+# 忽略 uni-app 官方的组件库错误和警告
+
+/uni_modules/uni-\*\*
+/js_sdk
+/utils/luch-request
+/utils/cypto
+package-lock.json
+```
+
+在项目中根目录下创建 `.prettierrc` 文件，添加以下代码:
+
+```json
+{
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": true,
+  "proseWrap": "preserve",
+  "arrowParens": "avoid",
+  "bracketSpacing": true,
+  "endOfLine": "auto",
+  "htmlWhitespaceSensitivity": "css",
+  "jsxBracketSameLine": false,
+  "jsxSingleQuote": false,
+  "trailingComma": "es5"
+}
+```
+
+在项目中根目录下创建 `.prettierignore` 文件，添加以下代码:
+
+```markdown
+/node_modules
+
+# 忽略打包的文件
+
+/unpackage
+
+# 忽略 uni-app 官方的组件库错误和警告
+
+/uni_modules/uni-\*\*
+/js_sdk
+/utils/luch-request
+```
+
+## 配置 package.json 文件
+
+在 package.json 文件中添加以下代码:
+
+```json
+{
+  "name": "xx",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "prettier --write"
+  },
+  // ...此处省略代码
+  "devDependencies": {
+    "@babel/eslint-parser": "^7.16.5",
+    "@vue/cli-plugin-babel": "^4.5.15",
+    "@vue/cli-plugin-eslint": "^4.5.15",
+    "@vue/eslint-config-prettier": "^7.0.0",
+    "babel-eslint": "^10.1.0",
+    "eslint": "7.5.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "eslint-plugin-vue": "^8.2.0",
+    "husky": "^7.0.4",
+    "lint-staged": "^12.1.4",
+    "prettier": "^2.5.1"
+  },
+  "gitHooks": {
+    "pre-commit": "lint-staged"
+  },
+  "lint-staged": {
+    "*.{js,vue}": ["prettier --write"]
+  }
+}
+```

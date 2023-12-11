@@ -1,0 +1,463 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import scriptsPng from './scripts.png'
+import envsPng from './envs.png'
+import whiteList from './white_list.png'
+import secret from './secret.png'
+import uploadFile from './upload_file.png'
+import projectConfig from './project_config.png'
+import terminal from './terminal.png'
+import webhook from './webhook.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-09-20',
+  title: '小程序之机器人CI_CD集成',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 什么是 CI_CD 集成
+
+自微信小程序诞生以来，上传体验版/生成开发版这个事就离不开微信开发者工具，
+那 CI/CD 的集成，就是一个从构建到发布以及通知，实现自动化的工具。
+本文主要用官方提供的 miniprogram-ci 依赖包和一些 node 的模块来实现。
+
+## 为什么要做 CI_CD 集成
+
+做为一个前端开发，在开发微信小程序的时候，我们应该都遇到过这样的场景：
+我们双手正在在键盘上飞舞，像写诗一样认真的编写每一行代码，脑海里想着解耦合、设计模式、抽象和分层的时候。
+突然之间，产品经理轻轻拍了拍了你肩膀，
+假装满怀歉意的跟你说：“我需要一个最新测试环境的体验二维码”
+于是你端起了印着“和气生财”的马克杯，喝了口水，开始了一波操作。
+
+1. git stash
+2. git checkout branch
+3. npm build env
+4. 打开开发者工具
+5. 点击“预览”，生成二维码
+6. 点击发布，生成体验版二维码
+7. 发送给对方
+
+搞定后，你活动了一下有些许酸疼的手指，切回分支恢复进度，脑海里努力地回忆着刚刚得思路。
+这时，测试工程师突然又找你，他也想要一个测试环境的二维码，这时候你又看了看一眼你的马克杯，黯然神伤…
+
+## 怎么实现 CI_CD
+
+前置准备
+
+1. 做好环境区分
+2. 配置小程序代码上传白名单
+3. 准备脚本文件 upload.js
+4. 钉钉群机器人 webhook 地址
+
+### 1、添加环境变量（环境区分）
+
+- 打包时引入`VUE_APP_ENV`关键字
+  <Image src={scriptsPng} alt="" />
+- 通过关键字引用不同环境的 api 域名
+  <Image src={envsPng} alt="" />
+
+### 2、配置白名单
+
+小程序后台：开发管理-->开发设置-->小程序代码上传
+第一步先生成密钥，下载密钥文件至本地。然后配置 IP 白名单。
+
+<Image src={whiteList} alt="" />
+<Image src={secret} alt="" />
+
+### 3、准备脚本文件 upload.js
+
+- 新建 upload.js
+
+  <Image src={uploadFile} alt="" />
+
+- 安装 [miniprogram-ci ](https://developers.weixin.qq.com/miniprogram/dev/devtools/ci.html)，开始编写脚本代码：`npm i miniprogram-ci -D`
+
+```javascript
+const ci = require('miniprogram-ci')
+const path = require('path')
+
+const project = new ci.Project({
+  appid: appid,
+  type: 'miniProgram',
+  projectPath: path.join(__dirname, './dist/build/mp-weixin'),
+  privateKeyPath: path.join(__dirname, './private.' + appid + '.key'),
+  ignores: ['node_modules/**/*', '.vscode', '.hbuilderx'],
+})
+
+/** 上传 */
+async function upload({ version = '0.0.0', desc = 'test', robot = 1 }) {
+  await ci.upload({
+    project,
+    version,
+    desc,
+    setting: {},
+    robot,
+    onProgressUpdate: console.log,
+  })
+}
+
+upload({ version, desc, robot })
+```
+
+- 新建 project.config.json
+
+<Image src={projectConfig} alt="" />
+
+- 优化代码
+
+```javascript
+const project_config = require('./project.config.json');
+const child_process = require('child_process');
+const request = require('request');
+const util = require('util');
+
+const exec = util.promisify(child_process.exec);
+
+
+function message(content) {
+  const data = {
+    msgtype: 'text',
+    text: { content },
+  };
+  request({
+    url: 'webhook地址',
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+};
+
+/** 上传 */
+async function upload({
+  env = 'dev',
+  name = '<your default mp name>',
+  env_desc = '测试环境'
+  ...
+}) {
+  message(`${name}小程序-${env_desc}，正在部署`);
+  await exec(`npm run build:mp-weixin-${env}`, { cwd: './' });
+
+  DO something...
+};
+
+upload(project_config);
+```
+
+- 安装[inquirer](https://www.npmjs.com/package/inquirer)：`npm i inquirer -D` 并再次优化代码
+
+```javascript
+const project_config = require('./project.config.json');
+const inquirer = require('inquirer');
+const fs = require('fs');
+
+const example = {
+  hema_appid: '<your appid>',
+  tcHema_appid: '<your another appid>',
+  applets: ['<your mp name>', '<your another mp name>'],
+  choices: ['测试环境-dev', '联调环境-local', '修复环境-fix', '预发环境-pre', '生产环境-prod', '演示环境-rep'],
+  robot_1: 1, // 机器人1号
+  robot_2: 2, // 机器人2号
+  robot_3: 3, // 机器人3号
+  version: '1.0.0',
+};
+
+const config = {};
+
+function fs_rewrite_config() {
+  fs.writeFileSync('./project.config.json', JSON.stringify(config), err => {
+    if (err) {
+      console.log('自动写入project.config.json文件失败，请手动填写，并检查错误!');
+    }
+  });
+}
+
+async function upload({...}) {
+  ....
+
+  // 上传完成
+  fs_rewrite_config()
+};
+
+async function update_config(user_info) {
+  const env = user_info.env.split('-')[1];
+  const env_desc = user_info.env.split('-')[0];
+  const appid = user_info.name.split('-')[1];
+  const name = user_info.name.split('-')[0];
+
+  const config = {
+    name,
+    env,
+    env_desc,
+    version: user_info.version,
+    desc: user_info.desc || env_desc,
+    appid,
+    robot: env === 'prod' ? example.robot_3 : env === 'rep' ? example.robot_2 : example.robot_1,
+  };
+
+  return config;
+};
+
+async function inquirer(config) {
+  return inquirer.prompt([
+    {
+      type: 'list',
+      name: 'name',
+      message: `请选择部署的小程序:`,
+      default: 0,
+      choices: example.applets,
+      filter(value) {
+        if (value === 'tcHema') {
+          return `${value}-${example.tcHema_appid}`;
+        }
+        return `${value}-${example.hema_appid}`;
+      },
+    },
+    {
+      type: 'list',
+      name: 'env',
+      message: `请选择部署环境:`,
+      default: 0,
+      choices: example.choices,
+    },
+    {
+      type: 'input',
+      name: 'version',
+      message: `设置上传的版本号（当前版本号：${config.version}）:`,
+      filter(opts) {
+        if (opts === '') {
+          return config.version;
+        }
+        return opts;
+      },
+    },
+    {
+      type: 'input',
+      name: 'desc',
+      message: `请写一个简单的介绍来描述这个版本改动过:`,
+    },
+  ]);
+};
+
+async init() {
+  const result_data = await inquirer(project_config);
+
+  // 更新配置信息
+  config = await update_config(result_data);
+
+  // 打包上传
+  await upload();
+};
+
+init();
+```
+
+<Image src={terminal} alt="" />
+
+- 最后换成 es6 写法，整体如下：
+
+```javascript
+const project_config = require('./project.config.json')
+const child_process = require('child_process')
+const ci = require('miniprogram-ci')
+const inquirer = require('inquirer')
+const request = require('request')
+const util = require('util')
+const path = require('path')
+const fs = require('fs')
+
+const example = {
+  hema_appid: '<your appid>',
+  tcHema_appid: '<your another appid>',
+  applets: ['<your mp name>', '<your another mp name>'],
+  choices: [
+    '测试环境-dev',
+    '联调环境-local',
+    '修复环境-fix',
+    '预发环境-pre',
+    '生产环境-prod',
+    '演示环境-rep',
+  ],
+  robot_1: 1, // 机器人1号
+  robot_2: 2, // 机器人2号
+  robot_3: 3, // 机器人3号
+  version: '1.0.0',
+}
+
+class appletCI {
+  exec = util.promisify(child_process.exec)
+  config = {}
+
+  async init() {
+    const result_data = await this.inquirer(project_config)
+
+    // 更新配置信息
+    this.config = await this.update_config(result_data)
+
+    // 打包上传
+    await this.upload()
+  }
+
+  async upload() {
+    const {
+      name = '<your mp name>',
+      appid = example.hema_appid,
+      env = 'dev',
+      env_desc = '测试环境',
+      robot = example.robot_1,
+      desc = '测试环境',
+      version = example.version,
+    } = this.config || {}
+
+    console.log(`${env_desc}正在打包`)
+
+    this.message(`${name}小程序-${env_desc}，正在部署`)
+
+    await this.exec(`npm run build:mp-weixin-${env}`, { cwd: './' })
+
+    console.log(`${env_desc}正在部署`)
+
+    const project = new ci.Project({
+      appid,
+      type: 'miniProgram',
+      projectPath: path.join(__dirname, './dist/build/mp-weixin'),
+      privateKeyPath: path.join(__dirname, './private.' + appid + '.key'),
+      ignores: ['node_modules/**/*', '.vscode', '.hbuilderx'],
+    })
+
+    await ci
+      .upload({
+        project,
+        robot,
+        desc,
+        version,
+        onProgressUpdate: console.log,
+      })
+      .then(() => {
+        this.message(`${name}小程序-${env_desc}，部署完成`)
+        console.log('部署完成')
+
+        // 重写配置文件
+        this.fs_rewrite_config()
+      })
+      .catch((error) => {
+        if (error.errCode == -1) {
+          this.message(`${name}小程序-${env_desc}，部署完成`)
+          console.log('部署完成')
+
+          // 重写配置文件
+          this.fs_rewrite_config()
+          return
+        }
+        this.message(`${name}小程序-${env_desc}，部署失败，原因为：${error}`)
+        console.log('部署失败', error)
+        process.exit(-1)
+      })
+  }
+
+  async inquirer(config) {
+    return inquirer.prompt([
+      {
+        type: 'list',
+        name: 'name',
+        message: `请选择部署的小程序:`,
+        default: 0,
+        choices: example.applets,
+        filter(value) {
+          if (value === 'tcHema') {
+            return `${value}-${example.tcHema_appid}`
+          }
+          return `${value}-${example.hema_appid}`
+        },
+      },
+      {
+        type: 'list',
+        name: 'env',
+        message: `请选择部署环境:`,
+        default: 0,
+        choices: example.choices,
+      },
+      {
+        type: 'input',
+        name: 'version',
+        message: `设置上传的版本号（当前版本号：${config.version}）:`,
+        filter(opts) {
+          if (opts === '') {
+            return config.version
+          }
+          return opts
+        },
+      },
+      {
+        type: 'input',
+        name: 'desc',
+        message: `请写一个简单的介绍来描述这个版本改动过:`,
+      },
+    ])
+  }
+
+  async update_config(user_info) {
+    const env = user_info.env.split('-')[1]
+    const env_desc = user_info.env.split('-')[0]
+    const appid = user_info.name.split('-')[1]
+    const name = user_info.name.split('-')[0]
+
+    const config = {
+      name,
+      env,
+      env_desc,
+      version: user_info.version,
+      desc: user_info.desc || env_desc,
+      appid,
+      robot:
+        env === 'prod'
+          ? example.robot_3
+          : env === 'rep'
+          ? example.robot_2
+          : example.robot_1,
+    }
+
+    return config
+  }
+
+  message(content) {
+    const data = {
+      msgtype: 'text',
+      text: { content },
+    }
+    request({
+      url: '<your webhook url>',
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+  }
+
+  fs_rewrite_config() {
+    fs.writeFileSync(
+      './project.config.json',
+      JSON.stringify(this.config),
+      (err) => {
+        if (err) {
+          console.log(
+            '自动写入project.config.json文件失败，请手动填写，并检查错误!'
+          )
+        }
+      }
+    )
+  }
+}
+
+const CI = new appletCI()
+CI.init()
+```
+
+### 4、配置 webhook 地址
+
+<Image src={webhook} alt="" />

@@ -1,0 +1,78 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-06-07',
+  title: 'Compose和Pipe函数',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 为什么需要 compose 和 pipe 函数
+
+函数式编程中，多个函数组合调用很容易写成洋葱代码 `f(h(g(1)))` ，这种写法乍一看就会让人皱起眉头，所以我们需要一个函数，能将多个函数组合成一个函数并按顺序调用，调用过程中上一个函数的返回值就是下一个函数的参数，这个函数就是 compose / pipe 函数。
+
+## Compose 和 Pipe 函数
+
+这两个函数的区别就是执行顺序不同，Compose 函数是从右到左执行(用的最多)，Pipe 函数则是从左到右执行。
+
+### Compose 函数
+
+我个人理解 Compose 函数为了方便我们连续执行方法，把自己调用传值的过程封装了起来，我们只需要告诉 Compose 函数我们要执行哪些方法，它会返回一个新函数，给这个新函数传入一个初始值，它会自动的按顺序执行方法，并将最终的结果返回给我。
+
+```javascript
+function multiplyTwo(num) {
+  return num * 2
+}
+function minusOne(num) {
+  return num - 1
+}
+function addTwo(num) {
+  return num + 2
+}
+function addThree(num) {
+  return num + 3
+}
+function compose() {
+  const args = [].slice.apply(arguments)
+
+  return function (num) {
+    var _result = num
+    for (var i = args.length - 1; i >= 0; i--) {
+      _result = args[i](_result)
+    }
+    return _result
+  }
+  /* return args.reduceRight((res, cb) => cb(res), num);*/
+}
+console.log(compose(addThree, addTwo, minusOne, multiplyTwo)(10))
+```
+
+### Pipe 函数
+
+Pipe 函数和 Compose 函数功能一样，但执行的顺序不同，Pipe 函数执行的顺序是从左往右。
+
+```javascript
+function pipe() {
+  const args = [].slice.apply(arguments)
+
+  return function (num) {
+    return args.reduce((res, cb) => cb(res), num)
+  }
+}
+```
+
+### 链式调用
+
+我们也可以用 Promise 来组织成一个链式调用，但是注意。这和面向对象的链式调用有区别
+
+```javascript
+Promise.resolve(10)
+  .then(multiplyTwo)
+  .then(minusOne)
+  .then(addTwo)
+  .then((res) => {
+    console.log(res)
+  })
+```

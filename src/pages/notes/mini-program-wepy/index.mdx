@@ -1,0 +1,376 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import author from './author.png'
+import strcture from './strcture.png'
+import analogy from './analogy.png'
+import issue from './issue.png'
+import crypto from './crypto.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2021-12-31',
+  title: 'WePY 小程序框架使用心得',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 一、项目的技术选型、架构。
+
+**OA 小程序选用的是 WePY2 框架 + Vant weapp UI 库进行开发。**
+
+#### **WePY**介绍
+
+WePY (发音: /'wepi/) 是小程序上最早的一款类 Vue 语法的开发框架，作者叫龚澄，社区 ID：Gcaufy。
+WePY 2 是基于实现组件化开发。因此 WePY 2 支持的最低版本小程序基础库为 1.6.3。
+
+<Image src={author} alt="" />
+
+> 官方文档地址：[https://wepyjs.github.io/wepy-docs/index.html](https://wepyjs.github.io/wepy-docs/index.html)
+
+WePY 框架于 2016 年 11 月在作者的个人 Github 账号上开源，后来因为外界关注度越来越高，于 2017 年年底迁回至 Tencent 域下，完成了所谓的“转正”。
+
+> **设计思想**
+>
+> 1. 非侵入式设计 WePY 2 运行于小程序之上，是对小程序原有能力的封装和优化，并不会对原有小程序框架有任何改动或者影响。
+> 1. 兼容原生代码 能够兼容原生代码，即部分页面为原生，部分页面为 WePY。同时做到无需任何改动即可引用现有原生开发的小程序组件。
+> 1. 基于小程序原生组件实现组件化开发 小程序原生组件在性能上相较之前有了很大的提升。因此 WePY 2 完全基于小程序原生组件实现，不支持小程序基础库 < 1.6.3 的版本。
+> 1. 基于 Vue Observer 实现数据绑定 数据绑定基于 Vue Observer 实现，同时为其定制小程序特有的优化。
+> 1. 更优的可扩展性 对于 core 库提供 mixin、hooks、use 等方式进行开发扩展，对于 cli 编译工具提供更强大的插件机制方便开发者可以侵入到编译的任何一个阶段进行个性化定制的编译。
+>
+> **WePY 2 和 WePY 1 的区别**
+> WePY 2 并不是基于 WePY 1 的升级版，而是完全重新开发的全新版本，因此实现原理完全不一样，比较难实现完全的向下兼容。主要体现在以下几点差异上：
+>
+> 1. 入口申请调整，WePY 1 使用类的继承方式 export default class MyPage extends wepy.page {} 在 WePY 2 中调整为 wepy.page({})。将实例化的过程放在生命周期事件中。
+> 1. 数据绑定机制调整，WePY 1 使用脏检查进行数据绑定，却让开发者不知道使用时候去调用 $apply() 方法。在 WePY 2 中使用了 Vue Observer 实现数据绑定，告别$apply()。
+> 1. 基于原生组件，WePY 1 是通过文件编译创建的静态组件在动态循环遍历时会出现一些问题，WePY 2 直接基于的小程序原生的组件去实现，避免了这一类问题。
+> 1. Vue 模板语法，WePY 2 中推荐使用 html 代替 wxml 来写 template，支持除 filter 之外的所有 Vue 模板语法。
+> 1. 编译方式改变，WePY 2 从基于文件编译调整为基于入口编译，因此对于图片等静态资源需要指定 static 选项 。
+
+**WePY 升级到 2.x 之后支持了大部分的 Vue 的语法，其中也包括 computed、watch 、props、$emit()等语法，还支持 Vuex，降低了学习成本，提高了开发效率。**
+
+#### 项目架构介绍
+
+使用 WePY2 写小程序时，采用的是.wpy 单文件编译，经过 cli 打包后，会生成打包后的 weapp 文件夹，在微信开发者工具中正常预览效果。
+
+<Image src={strcture} alt="" />
+
+## 二、语法介绍
+
+#### 单文件编译
+
+WePY 的语法其实和 Vue 非常像，.wpy 单文件的结构也和 Vue 基本一样。
+
+```html
+<template>
+  <!-- 使用html代替wxml 支持除filter 之外的所有 Vue 模板语法。 -->
+</template>
+
+<script>
+  wepy.page({
+    //页面使用的是wepy.page()，组件使用的是wepy.component(), app实例使用的是wepy.app()
+    data: {}, // 递归劫持的数据
+    computed: {}, //计算属性
+    watch: {}, //侦听器
+    methods: {}, // 模板中绑定的方法
+    // 同级还可以写生命周期函数 如onShow()等...
+  })
+</script>
+
+<style lang="less">
+  // css样式
+</style>
+
+<config> //小程序的相关页面或组件配置 </config>
+```
+
+<Image src={analogy} alt="" />
+
+#### 模板语法中不支持的 filter
+
+在实际开发中，经常会需要在模板中使用函数去处理数据，在 Vue 中常用的就是`filter`或在插值表达式中使用全局函数，小程序因为运行环境的原因，则使用的是 WXS 语法，WePY 从`1.7.x`开始支持 WXS 语法，与原生语法不同的是，WePY 会将 ES5 之后的语法编译为小程序原生支持的语法。
+
+```javascript
+//common.wxs
+//处理任务状态的显示
+const filterTaskStatus = (status) => {
+  if (status == -1) {
+    return '已拒绝'
+  } else if (status == 0) {
+    return '待接收'
+  } else if (status == 1) {
+    return '进行中'
+  } else if (status == 2) {
+    return '已完成'
+  } else if (status == 3) {
+    return '已逾期'
+  } else if (status == 4) {
+    return '已验收'
+  } else if (status == 5) {
+    return '待验收'
+  } else if (status == 6) {
+    return '已驳回'
+  }
+}
+
+module.exports = {
+  filterTaskStatus,
+}
+```
+
+```html
+// xx.wpy // 1. WXS只能在wxml模板中使用 不能在script中使用
+<template>
+  <div>{{ wxsTools.filterTaskStatus(task.status) }}</div>
+</template>
+// 2. 外链必须为相对路径，文件后缀为.wxs
+<wxs module="wxsTools" lang="babel" src="../../../utils/common.wxs"></wxs>
+<script>
+  wepy.page({})
+</script>
+
+<style lang="less"></style>
+
+<config></config>
+```
+
+## 三、踩坑之旅
+
+#### 数组变异方法偶尔不触发视图更新
+
+WePY2.x 数据双向绑定是通过 Vue 的 Observer 实现的，但是源码中增加了一些 WePY 自己的东西，导致不能稳定触发视图更新。
+
+```html
+<script>
+  wepy.page({
+    methods: {
+      /**
+       * @param {number} type 0接收人 1抄送人
+       * @param {string} userId 当前选择成员的唯一标识
+       * @param {string} name 当前选择成员的姓名
+       */
+      handleSelectPerson(type, userId, name) {
+        for (var key in this.memberList) {
+          this.memberList[key].map((item) => {
+            if (item.userId === userId) {
+              item.isChecked = !item.isChecked
+              if (item.isChecked) {
+                const person = {
+                  userId: item.userId,
+                  userName: item.name,
+                }
+                // 这里的push不能稳定的触发视图更新
+                return this.tempMemberCheckedList.push(person)
+              } else if (!item.isChecked) {
+                this.tempMemberCheckedList = this.tempMemberCheckedList.filter(
+                  (v) => v.userId !== item.userId
+                )
+                return
+              }
+            }
+          })
+        }
+        this.$set(
+          this,
+          this.memberTypeEnum[this.memberType],
+          this.tempMemberCheckedList
+        )
+      },
+    },
+  })
+</script>
+```
+
+```html
+<script>
+wepy.page({
+  methods: {
+    /**
+     * @param {number} type 0接收人 1抄送人
+     * @param {string} userId 当前选择成员的唯一标识
+     * @param {string} name 当前选择成员的姓名
+     */
+    handleSelectPerson(type, userId, name) {
+      for (var key in this.memberList) {
+        this.memberList[key].map((item) => {
+          if (item.userId === userId) {
+            item.isChecked = !item.isChecked
+            if (item.isChecked) {
+              const person = {
+                userId: item.userId,
+                userName: item.name,
+              }
+              // 需要更换成为赋值新内存空间的操作才能触发视图更新
+              return (this.tempMemberCheckedList = [
+                ...this.tempMemberCheckedList,
+                person,
+              ])
+            } else if (!item.isChecked) {
+              this.tempMemberCheckedList = this.tempMemberCheckedList.filter(
+                (v) => v.userId !== item.userId
+              )
+              return
+            }
+          }
+        })
+      }
+      this.$set(
+        this,
+        this.memberTypeEnum[this.memberType],
+        this.tempMemberCheckedList
+      )
+    },
+  },
+})
+</script>
+```
+
+<Image src={issue} alt="" />
+
+#### 小程序直传文件到阿里云 OSS
+
+OA 项目中，Web 端文件上传的方式是直传到阿里云 OSS 服务器，将服务器上传文件成功后的地址发送给后端保存，小程序端也采用了相同的方式，但阿里云官方文档提供的方法，并不能完全实现功能，最后在网上参考了其他人的解决方案，实现了功能。
+
+<Image src={crypto} alt="" />
+由于小程序中使用 npm 包有限制，所以需要把用到的算法，单独作为 js 文件去引入使用。
+最终实现代码如下：
+
+```javascript
+//upload.js
+const Base64 = require('./Base64.js')
+require('./hmac.js')
+require('./sha1.js')
+const Crypto = require('./crypto.js')
+// 计算签名。
+function computeSignature(accessKeySecret, canonicalString) {
+  const bytes = Crypto.HMAC(Crypto.SHA1, canonicalString, accessKeySecret, {
+    asBytes: true,
+  })
+  return Crypto.util.bytesToBase64(bytes)
+}
+
+const date = new Date()
+date.setHours(date.getHours() + 1)
+const policyText = {
+  expiration: date.toISOString(), // 设置policy过期时间。
+  conditions: [
+    // 限制上传大小。
+    ['content-length-range', 0, 50 * 1024 * 1024], //限制大小 50M
+  ],
+}
+
+export function getFormDataParams(credentials) {
+  const policy = Base64.encode(JSON.stringify(policyText)) // policy必须为base64的string。
+  const signature = computeSignature(credentials.AccessKeySecret, policy)
+  const formData = {
+    OSSAccessKeyId: credentials.AccessKeyId,
+    signature,
+    policy,
+    'x-oss-security-token': credentials.SecurityToken,
+  }
+  return formData
+}
+```
+
+```html
+// upload-file.wpy
+<script>
+  import wepy from '@wepy/core'
+  import { getFormDataParams } from '@/cypto/upload.js'
+
+  wepy.component({
+    props: ['fileList'],
+    data: {
+      tempFilePaths: [], // 临时的本地文件列表
+    },
+    methods: {
+      // 触摸上传按钮触发
+      handleUpload() {
+        const count = 6 - this.fileList.length
+        if (count === 0) return wepy.$showToast('最多上传6个附件！')
+        wx.chooseImage({
+          count, //限制用户可选择图片的数量
+          sizeType: ['original', 'compressed'], //图片尺寸为原图和压缩图
+          sourceType: ['album', 'camera'], //图片来源为相册和相机
+          success: (res) => {
+            // tempFilePath可以作为img标签的src属性显示图片
+            this.tempFilePaths = res.tempFilePaths
+            if (this.tempFilePaths.length > 0) {
+              wx.showLoading({
+                title: '上传中',
+                mask: true,
+              })
+              // 获取OSS Token
+              this.getOssToken()
+            }
+          },
+        })
+      },
+      // 获取OSS Token
+      getOssToken() {
+        wepy.$http
+          .ossToken()
+          .then((response) => {
+            // 通过wx的api上传到oss
+            this.uploadFileToWx(response, getFormDataParams(response))
+          })
+          .catch((err) => {
+            wepy.$showToast(err.errorMessage)
+          })
+      },
+      // 通过wx的api上传到oss
+      uploadFileToWx(oss, token) {
+        // 因为用户可能选多张图片 所以需要多个异步请求
+        const promises = this.tempFilePaths.reduce((arr, item) => {
+          const p = this.batchUpload(item, oss, token)
+          return [...arr, p]
+        }, [])
+        Promise.all(promises)
+          .then((list) => {
+            //全部上传成功后将文件地址返回给父组件
+            const urlList = list.map((item) => item.fileUrl)
+            this.$emit('uploaded-file', [...this.fileList, ...urlList])
+            wx.hideLoading()
+          })
+          .catch((err) => {
+            wx.hideLoading()
+            wepy.$showToast('上传失败！请重试')
+            this.tempFilePaths = []
+          })
+      },
+      // 批量上传 返回promise
+      batchUpload(file, oss, token) {
+        return new Promise((resolve, reject) => {
+          const url = `https://${oss.bucketName}.${oss.region}.aliyuncs.com`
+          const key = `${Date.now()}/${file.replace('wxfile://tmp_', '')}`
+          wx.uploadFile({
+            url,
+            filePath: file,
+            name: 'file',
+            formData: {
+              ...token, // 加密后的临时STS账号
+              key, // 拼好时间戳的文件路径
+              success_action_status: '200', // 与服务器约定成功的状态码
+            },
+            success(res) {
+              if (res.statusCode !== 200) {
+                return reject(res)
+              }
+              // 由于阿里云并不会返回上传成功的文件路径，所以需要将文件地址自行拼接
+              res.fileUrl = url + '/' + key
+              res.fileName = file.replace('wxfile://tmp_', '')
+              resolve(res)
+            },
+            fail(err) {
+              reject(err)
+            },
+          })
+        })
+      },
+    },
+  })
+</script>
+```
+
+> 参考博客原文：
+> [https://my.oschina.net/wangnian/blog/2245468](https://my.oschina.net/wangnian/blog/2245468) > [https://help.aliyun.com/document_detail/92883.html](https://help.aliyun.com/document_detail/92883.html) > [https://www.jianshu.com/p/34d6dcbdc2e5](https://www.jianshu.com/p/34d6dcbdc2e5)

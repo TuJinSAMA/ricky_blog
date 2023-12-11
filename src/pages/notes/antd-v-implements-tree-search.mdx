@@ -1,0 +1,137 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2021-08-30',
+  title: 'AntD-V实现Tree树形控件模糊搜索功能',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+需求是要在树形控件上方做个搜索功能，可以模糊搜索到树中对应的节点，右侧会有另一个面板记录所有被选择的节点，antd 官方文档刚好有个例子是可以实现这个需求的，打算直接拿来用。
+
+> 官方文档地址：[https://www.antdv.com/components/tree-cn/#components-tree-demo-searchable](https://www.antdv.com/components/tree-cn/#components-tree-demo-searchable)
+
+```vue
+<a-input
+  placeholder="请输入部门名称"
+  @pressEnter="onSearchDepartment"
+  v-model.trim="searchValue"
+  allowClear
+>
+  <a-icon slot="prefix" type="search" />
+</a-input>
+<a-tree
+  checkable
+  checkStrictly
+  :expanded-keys="expandedKeys"
+  :auto-expand-parent="autoExpandParent"
+  :treeData="treeData"
+  @expand="onExpand"
+>
+  <a-icon slot="switcherIcon" type="down" />
+  <!--用作用域插槽自定义树组件的标题部分-->
+  	<template #custom="{title}">
+			<!--如果模糊查询到了则高亮显示-->
+  	  <span v-if="title.indexOf(searchValue) > -1">
+  	    {{ title.substring(0, title.indexOf(searchValue)) }}
+  	    <span style="color: #1A90FF">{{ searchValue }}</span>
+  	    {{ title.substring(title.indexOf(searchValue) + searchValue.length) }}
+  	  </span>
+  	  <span v-else>{{ title }}</span>
+  	</template>
+</a-tree>
+```
+
+实现思路： 请求后台树状数据时，留存一份平面化的数据，在用户搜索时，找到对应项的父节点展开，并且 tree 组件中搜索字高亮显示。
+
+```javascript
+export default {
+  data() {
+    return {
+      treeData: [], // tree组件的数据
+      searchValue: '', // 搜索框的内容
+      expandedKeys: [], //展开的树节点
+      autoExpandParent: true, // 是否自动展开父节点
+      treeDataList: [], //平面的部门信息列表
+    };
+  },
+  watch: {
+    searchValue: function() {
+      this.onSearchDepartment();
+    },
+  },
+  methods: {
+    // 从后台获取树形数据
+    getTreeData() {
+      this.$http
+        .xxxx()
+        .then({data} => {
+        	//给tree组件递归赋值 设置作用域插槽的name
+					this.treeData = this.dataFormat(data);
+        	//留存一份平面的数据
+          this.generateList(data);
+        })
+        .catch(response => {
+          this.$message.error(response.errorMessage);
+        });
+    },
+    dataFormat(data){
+      return data.map(item => {
+        if(item.children){
+        	item.children = this.dataFormat(item.children);
+        }
+      	return {
+        	...item,
+          scopedSlots: { title: 'custom' },
+        }
+      });
+    },
+    // 树状数据平面化
+    generateList(data) {
+      data.forEach(item => {
+        const key = item.key;
+        this.treeDataList.push({ key, title: item.title });
+        if (node.children) {
+          this.generateList(node.children);
+        }
+      });
+    },
+    // 搜索时触发
+    onSearchDepartment() {
+      // 在平面数据中找到搜索的项 再把对应项的父节点key赋值给 控制展开节点的列表
+      this.expandedKeys = this.treeDataList
+        .map(item => {
+          if (item.title.indexOf(this.searchValue) > -1)
+            return this.getParentKey(item.key, this.treeData);
+          return null;
+        })
+        .filter((v, i, ary) => v && ary.indexOf(v) === i);
+      //启用自动展开父节点
+      this.autoExpandParent = true;
+    },
+    // 在树状数据中 找到搜索节点的父节点的key
+    getParentKey(key, tree) {
+      let parentKey;
+      tree.forEach(item => {
+        const node = item;
+        if (node.children) {
+          if (node.children.some(v => v.key === key)) {
+            parentKey = node.key;
+          } else if (this.getParentKey(key, node.children)) {
+            parentKey = this.getParentKey(key, node.children);
+          }
+        }
+      });
+      return parentKey;
+    },
+    // 树节点展开/收起时触发
+    onExpand(expandedKeys) {
+      // 树节点手动展开/关闭时 以用户操作的为准
+      this.expandedKeys = expandedKeys;
+      this.autoExpandParent = false;
+    },
+  },
+};
+```

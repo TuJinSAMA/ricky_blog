@@ -1,0 +1,131 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-12-24',
+  title: 'async函数',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 简介
+
+JavaScript 异步编程的终极解决方案，Generator 的语法糖。
+它使我们实现异步操作更简单，写法更同步化。先看下我们之前使用 Promise 和 Generator 是怎么实现异步操作的：
+
+```typescript
+// Promise
+axios
+  .get('/json/url.json')
+  .then(({ data }) => {
+    return axios.get(data.user)
+  })
+  .then(({ data }) => {
+    console.log(data)
+  })
+
+// Generator
+function* gen() {
+  const { data } = yield axios.get('/json/url.json')
+  console.log(data)
+  const result = yield axios.get(data.user)
+  console.log(result.data)
+}
+
+function run(generator) {
+  const _g = generator()
+
+  function next(data) {
+    let _result = _g.next(data)
+    if (_result.done) return _result.value
+    _result.value.then((res) => {
+      return next(res)
+    })
+  }
+  return next()
+}
+
+run(gen)
+```
+
+再看下如果使用 async 函数是怎么实现的：
+
+```typescript
+async function getData() {
+  const { data } = await axios.get('/json/url.json')
+  console.log(data)
+  const result = await axios.get(data.user)
+  console.log(result.data)
+}
+getData()
+```
+
+可以看到使用 Promise 是链式调用的方式，Generator 则是需要一个自动执行器，而 async 函数直接就可以执行异步操作并且使得它的写法像同步操作一样。相比前面两种方式，async 函数显得更方便，更容易阅读。上面我们也说到 async 函数是 Generator 的语法糖，它的改进体现在以下几点：
+
+1. 内置执行器，不需要手动调用 `next` 函数，自动执行。
+2. 更好的语义，async、await 相比于 \*、yield 更明显的表示出内部有异步操作，需要等待结果才继续向下执行。
+3. 更广的适用性，在 await 后面可以是 Promise 或任何值，当然其他非 Promise 的值会被包装成 `Promise.resolve()` 之后的值
+4. 返回的是 Promise，async 函数本身也返回的是 Promise，你可以把 async 函数看成是多个异步操作的集合。
+
+## async 函数实现原理
+
+async 函数的实现原理，就是将 Generator 函数和自动执行器包装在一个函数里。
+
+```typescript
+async function getData() {
+  const { data } = await axios.get('/json/url.json')
+  console.log(data)
+  const result = await axios.get(data.user)
+  console.log(result.data)
+}
+
+// 上面的函数等同于
+
+function getData() {
+  return spawn(function* () {
+    const { data } = yield axios.get('/json/url.json')
+    console.log(data)
+    const result = yield axios.get(data.user)
+    console.log(result.data)
+  })
+}
+```
+
+而 spawn 内部的实现可以模拟一下就是这样的：
+
+```typescript
+function spawn(genF) {
+  return new Promise((resolve, reject) => {
+    const gen = genF()
+    function step(nextF) {
+      let next
+      try {
+        next = nextF(gen)
+      } catch (error) {
+        return reject(error)
+      }
+      if (next.done) {
+        return resolve(next.value)
+      }
+      Promise.resolve(next.value).then(
+        function (result) {
+          step(function () {
+            return gen.next(result)
+          })
+        },
+        function (err) {
+          step(function () {
+            return gen.throw(err)
+          })
+        }
+      )
+    }
+    step(function () {
+      return gen.next(undefined)
+    })
+  })
+}
+```
+
+上面的 spawn 函数接收一个 Generator 函数作为参数。因为 async 函数本身就返回一个 Promise ，所以我们先 `new` 了一个 Promise 对象，在传给 Promise 的执行器函数中，我们先执行了 `genF` 函数得到一个 Iterator 遍历器对象。之后我们定义了一个 `step()` 方法，这个就是我们的自动执行器，它接收一个函数作为参数，而这个函数内部其实就是返回执行 `next` 或 `throw` 方法的结果，然后在 `step` 函数内部拿到 `next` 或 `throw` 执行过后的结果，进行判断是否遍历完成，如果没有完成则继续递归执行 `step()`，如果完成了就改变 Promise 的状态并返回结果。

@@ -1,0 +1,37 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+
+export const meta = {
+  author: '荼锦',
+  date: '2022-02-09',
+  title: '记录一些实用的js工具函数',
+  description:
+    '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 保留小数(不四舍五入)
+
+由于 JS 浮点数计算并不精准，导致小数在计算过程中容易出现误差，例如有道经典的面试题就是：
+`0.1  + 0.2 !== 0.3`
+目前解决方案为，将小数转成字符串，截取对应的位数即可。
+
+```javascript
+// 保留小数（不四舍五入）
+/**
+ *
+ * @param {Number} num 要处理的数字
+ * @param {Number} decimal 需要截取的小数位数
+ * @returns {Number} 截取小数位后的数字
+*/
+formatDecimal(num, decimal) {
+  let result = num.toString();
+  const index = result.indexOf('.');
+  if (index !== -1) {
+    result = result.substring(0, decimal + index + 1);
+  } else {
+    result = result.substring(0);
+  }
+  return parseFloat(result);
+}
+```

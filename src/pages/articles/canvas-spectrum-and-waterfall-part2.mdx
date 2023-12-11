@@ -1,0 +1,681 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import preview from './canvas-spectrum-and-waterfall-part1/preview.gif'
+
+export const meta = {
+  author: '荼锦',
+  date: '2023-05-09',
+  title: '手把手教你实现高性能的Canvas瀑布图和频谱图(下)',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 最终实现效果
+
+首先回顾下背景，因为我司是做无线电相关业务的，所以需要用到频谱图和瀑布图来做信号的可视化。你可以把它看作是将信号文件以"播视频"的方式播放给用户看。我们再来看下最终实现的效果是什么样的：
+<Image src={preview} alt="" />
+本文将接着上文继续介绍如何实现这样的一套"播放"图表组件以达到这种效果。
+需要注意的是，本文是一篇教程向文章，为了使整体过程看起来连贯，所以我会尽可能描述的完整一些。各位也可以自行跳转到感兴趣的部分阅读相关内容。让我们继续吧！
+
+> **注意：** 由于篇幅过长，所以本文将分成上下两篇文章，上篇主要是基础的介绍以及进度条的实现。
+> 下篇则是频谱图和瀑布图的实现，以及播放数据使图表"动"起来。
+
+## 实现频谱图
+
+上一篇中我们实现了进度条，接下来我们继续实现频谱图。首先我们需要了解下频谱图的基本知识，最起码要知道横轴和纵轴都是表示什么意思。下面是一个频谱图的基本介绍：
+
+> 频谱图（Spectrum）也被称为频谱分析图，是一种用于可视化信号频率成分的图形表示方法。它通常是一个二维图，其中横轴表示频率，纵轴表示信号的强度或功率。
+> 频谱图常用于分析音频信号、无线通信信号、光谱信号等。它可以帮助人们识别信号中的频率成分和噪声，了解信号的频域特性和频率分布情况，从而在实际应用中优化信号处理和调整相关参数。
+> 频谱图的生成过程是通过将信号进行傅里叶变换，将信号从时域转换到频域，并将频率信息转换为可视化的图形表示。在频谱图中，不同颜色或灰度值通常表示不同频率成分的功率或幅度，因此可以直观地展示信号的频率分布情况。
+
+根据上面的介绍我们得知，频谱图的横轴表示频率，纵轴表示功率。
+接下来我们直接使用 HighCharts 中的折线图来实现这个图表。
+
+```jsx
+// path: '@/components/SpectrumChart/index.jsx'
+import React, { useState, useEffect, useRef, useImperativeHandle } from 'react'
+import { ceil, floor } from 'lodash'
+import Highcharts from 'highcharts'
+
+// 当同一个页面存在多个频谱图时 使用 Map 数据结构存储 HighCharts 实例对象
+let instanceOfMap = new Map()
+
+const SpectrumChart = React.forwardRef(
+  (
+    {
+      // 将一些配置项暴露给父组件，方便定制
+      zoomType = 'x',
+      yAxisVisible = true,
+      xAxisVisible = true,
+      color = '#15CDE4',
+      backgroundColor = 'rgba(0,0,0,0)',
+      height = 50,
+      spacingBottom = 25,
+      spacingLeft = 10,
+      spacingRight = 3,
+      spacingTop = 20,
+      yAxisMin = 1000,
+      yAxisMax = -1000,
+      marginBottom = 30,
+      yTitle = '电平(dBuv)',
+    },
+    ref
+  ) => {
+    const spectrumRef = useRef(null) // 图表 DOM 引用
+
+    const [state, setState] = useState({
+      xAxisMin: 0,
+      xAxisMax: 0,
+      isFirstRender: true,
+    })
+
+    const [keySymbol, setKeySymbol] = useState(null)
+
+    useEffect(() => {
+      // 每一个图表初始化之前先创建一个 symbol 作为 key
+      // 然后将这个组件的图表的 HighCharts 实例对象 存放在 instanceOfMap 中
+      setKeySymbol(Symbol())
+    }, [])
+
+    useEffect(() => {
+      keySymbol && createChart()
+    }, [keySymbol])
+
+    // 获取 highcharts 组件的实例对象
+    const getChartInstance = () => {
+      return instanceOfMap.get(keySymbol)
+    }
+    // 设置 highcharts 组件的实例对象
+    const setChartInstance = (value) => {
+      return instanceOfMap.set(keySymbol, value)
+    }
+    // 创建 chart 实例,并渲染到页面
+    const createChart = () => {
+      const config = {
+        colors: [color],
+        chart: {
+          zoomType: zoomType,
+          animation: false,
+          backgroundColor: backgroundColor,
+          spacingBottom: spacingBottom,
+          spacingLeft: spacingLeft,
+          spacingRight: spacingRight,
+          spacingTop: spacingTop,
+          marginBottom: marginBottom,
+          // 隐藏 resetZoom
+          resetZoomButton: {
+            position: { x: 1000 },
+          },
+        },
+        title: {
+          floating: true,
+          text: '',
+        },
+        credits: {
+          enabled: false,
+        },
+        legend: {
+          enabled: false,
+        },
+        yAxis: {
+          // 网格线颜色
+          gridLineColor: '#292929',
+          visible: yAxisVisible,
+          max: yAxisMax,
+          min: yAxisMin,
+          allowDecimals: false,
+          tickInterval: 20,
+          labels: {
+            x: 0,
+            y: 0,
+            align: 'right',
+            style: {
+              color: '#fff',
+            },
+          },
+          title: {
+            text: yTitle,
+            style: {
+              color: '#fff',
+            },
+          },
+        },
+        xAxis: {
+          // 网格线最下方线的颜色
+          lineColor: '#4F4F4F',
+          visible: xAxisVisible,
+          minRange: (state.xAxisMax - state.xAxisMin) * 0.01,
+          labels: {
+            reserveSpace: false,
+            autoRotation: false,
+            style: {
+              color: '#fff',
+            },
+            formatter: function () {
+              return floor(this.value / 1e6, 2) + 'MHz'
+            },
+          },
+          title: {
+            text: null,
+          },
+          tickLength: 5,
+        },
+        boost: {
+          useGPUTranslations: true,
+        },
+        tooltip: {
+          enabled: false,
+        },
+        series: [
+          {
+            lineWidth: 1,
+            enableMouseTracking: false,
+            linecap: null,
+            animation: false,
+            turboThreshold: 3000,
+            marker: {
+              enabled: false,
+            },
+          },
+        ],
+      }
+      const spectrumChart = new Highcharts.Chart(spectrumRef.current, config)
+      setChartInstance(spectrumChart)
+    }
+    // 更新渲染图表 暴露给父组件调用 传入图表的数据
+    const updateChart = (res) => {
+      if (!res.data) return
+      const dataLength = res.data.length
+      // 数据聚合
+      const resultData = res.data.map((currentValue, index) => {
+        // 根据起始值与结束值计算每一个点的坐标
+        const x = ceil(
+          res.startFrequency +
+            ((res.stopFrequency - res.startFrequency) / dataLength) * index
+        )
+        const y = currentValue
+        if (index === dataLength - 1) {
+          return [res.stopFrequency, y]
+        }
+        return [x, y]
+      })
+      // 获取当前 chart 的实例对象
+      const spectrumChart = getChartInstance()
+      if (state.isFirstRender) {
+        // 如果是第一次渲染 则设置横轴频率范围
+        spectrumChart.update({
+          xAxis: {
+            min: res.startFrequency,
+            max: res.stopFrequency,
+          },
+        })
+        setState((s) => ({
+          ...s,
+          xAxisMin: res.startFrequency,
+          xAxisMax: res.stopFrequency,
+          isFirstRender: false,
+        }))
+        // 重新绘制以达到更新效果
+        resetChart()
+      }
+      // 将当前一帧的数据绘制在页面上
+      spectrumChart.series[0].setData(resultData, true, false)
+    }
+
+    // 重新绘制 chart
+    const resetChart = () => {
+      const spectrumChart = getChartInstance()
+      if (spectrumChart) {
+        spectrumChart.destroy()
+        createChart()
+      }
+    }
+
+    useImperativeHandle(ref, () => ({
+      updateChart: updateChart,
+    }))
+
+    return <div style={{ height: height }} ref={spectrumRef}></div>
+  }
+)
+
+export default SpectrumChart
+```
+
+然后我们在页面中引用组件：
+
+```jsx
+// index.jsx
+// ...
+	  const spectrumChartRef = useRef(null) // 新增
+// ...
+  return (
+    <div className={style.container}>
+      <div className={style.main}>
+        <div className={style.play_group}>
+					{/* ... */}
+        </div>
+        <div className={style.charts_box}>
+					<ProgressBar ref={progressBarRef} percentage={percentage} />
+          <SpectrumChart
+            yAxisMax={0}
+            yAxisMin={-140}
+            yTitle="电平(dBm)"
+            height={250}
+            ref={spectrumChartRef}
+          /> {/*新增*/}
+          {/* 瀑布图 */}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+## 实现瀑布图
+
+我们在实现进度条的时候其实已经绘制过瀑布图了，所以原理基本是一样的，在这里补充下瀑布图的基本介绍：
+
+> 瀑布图（Waterfall Plot）是一种用于可视化信号随时间变化的频谱图，它将多个频谱图按时间顺序排列，并将它们叠加在一起形成一个三维图像。瀑布图通常由时间、频率和信号强度（或功率）三个维度组成。
+> 在瀑布图中，时间通常被表示为横轴，频率被表示为纵轴，信号强度（或功率）被表示为颜色深浅或灰度值。每个时间点对应一个频谱图，通过将多个频谱图叠加在一起，形成了一个连续的三维图像，可以直观地展示信号在不同时间、不同频率上的变化情况。
+> 瀑布图通常用于分析动态信号，如雷达信号、声音信号、振动信号等。它可以帮助人们观察信号随时间变化的频率分布情况，识别信号中的周期性成分和不稳定成分，从而进行信号处理和分析。
+> 瀑布图的生成需要对信号进行时频分析，常用的方法包括短时傅里叶变换（Short-Time Fourier Transform，STFT）、连续小波变换（Continuous Wavelet Transform，CWT）等。
+
+不过与进度条不同的是，我们用于展示的瀑布图，横轴为了和频谱图保持一直，所以都表示频率，而纵轴用来表示时间，颜色深浅依然用来表示功率。接下来我们实现瀑布图组件：
+
+```jsx
+// path: '@/components/FallsChart/index.jsx'
+import React, { useState, useEffect, useRef, useImperativeHandle } from 'react'
+import { round } from 'lodash'
+import style from './index.module.styl'
+
+// 引入颜色图依赖包
+const ColorMap = require('colormap')
+
+const FallsChart = React.forwardRef(
+  (
+    {
+      // 暴露一些定制化的参数给父组件
+      title = '瀑布图(dBuv)',
+      height = 50,
+      minDb = -125,
+      maxDb = 0,
+      legendWidth = 64,
+      padding = 2,
+      colormapName = 'jet',
+      selection = true,
+    },
+    ref
+  ) => {
+    // 图表容器 DOM 的引用
+    const heatmap = useRef(null)
+    // 初始化 state
+    const [state, setState] = useState({
+      canvasCtx: null,
+      fallsCanvas: null,
+      fallsCanvasCtx: null,
+      legendCanvasCtx: null,
+      canvasWidth: 0,
+      colormap: [],
+    })
+
+    useEffect(() => {
+      // 初始化组件
+      initComponent()
+    }, [])
+
+    // 初始化组件
+    const initComponent = () => {
+      if (!heatmap.current) return
+      // 获取容器的宽高
+      const width = heatmap.current.clientWidth
+      const height = heatmap.current.clientHeight
+      // 初始化颜色图
+      const colormap = initColormap()
+      // 创建画布
+      const { fallsCanvasCtx, canvasCtx, legendCanvasCtx } = createCanvas(
+        width,
+        height
+      )
+      // 绘制左边颜色图图例
+      drawLegend(canvasCtx, legendCanvasCtx, colormap)
+      // 更新 state
+      setState((s) => ({
+        ...s,
+        colormap,
+        fallsCanvasCtx,
+        canvasCtx,
+        legendCanvasCtx,
+      }))
+    }
+
+    // 初始化颜色图
+    const initColormap = () => {
+      return ColorMap({
+        colormap: colormapName,
+        nshades: 150,
+        format: 'rba',
+        alpha: 1,
+      })
+    }
+
+    // 创建画布
+    // 这里需要创建三个画布，一个用来绘制瀑布图，另一个将绘制好的瀑布图展示在页面上,最后一个是左侧颜色图图例的画布
+    const createCanvas = (width, height) => {
+      // 创建用来绘制的画布
+      const fallsCanvas = document.createElement('canvas')
+      fallsCanvas.width = 0
+      fallsCanvas.height = height
+      const fallsCanvasCtx = fallsCanvas.getContext('2d')
+
+      // 创建最终展示的画布
+      const canvas = document.createElement('canvas')
+      canvas.className = 'main_canvas'
+      canvas.height = height - padding
+      canvas.width = width
+      heatmap.current.appendChild(canvas)
+      const canvasCtx = canvas.getContext('2d')
+
+      // 创建图例图层画布
+      const legendCanvas = document.createElement('canvas')
+      legendCanvas.width = 1
+      const legendCanvasCtx = legendCanvas.getContext('2d')
+      return {
+        fallsCanvasCtx,
+        canvasCtx,
+        legendCanvasCtx,
+      }
+    }
+
+    // 更新瀑布图 传入要渲染的数据
+    const updateChart = (result) => {
+      const len = result.data.length
+      if (len !== state.canvasWidth) {
+        setState((s) => ({
+          ...s,
+          canvasWidth: len,
+        }))
+        state.fallsCanvasCtx.canvas.width = len
+      }
+      // 先在用于绘制的画布上绘制图像
+      addWaterfallRow(result.data)
+      // 再将画好的图像显示在页面中
+      drawFallsOnCanvas(len)
+    }
+    // 在用于绘制的画布上绘制图像
+    const addWaterfallRow = (data) => {
+      // 先将已生成的图像向下移动一个像素
+      state.fallsCanvasCtx.drawImage(
+        state.fallsCanvasCtx.canvas,
+        0,
+        0,
+        data.length,
+        height,
+        0,
+        1,
+        data.length,
+        height
+      )
+      // 再画新一行的数据
+      const imageData = rowToImageData(data)
+      state.fallsCanvasCtx.putImageData(imageData, 0, 0)
+    }
+    // 绘制单行图像
+    const rowToImageData = (data) => {
+      const imageData = state.fallsCanvasCtx.createImageData(data.length, 1)
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const cIndex = getCurrentColorIndex(data[i / 4])
+        const color = state.colormap[cIndex]
+        imageData.data[i + 0] = color[0]
+        imageData.data[i + 1] = color[1]
+        imageData.data[i + 2] = color[2]
+        imageData.data[i + 3] = 255
+      }
+      return imageData
+    }
+    // 获取数据对应的颜色图索引
+    const getCurrentColorIndex = (data) => {
+      const outMin = 0
+      const outMax = state.colormap.length - 1
+      if (data <= minDb) {
+        return outMin
+      } else if (data >= maxDb) {
+        return outMax
+      } else {
+        return round(((data - minDb) / (maxDb - minDb)) * outMax)
+      }
+    }
+    // 将绘制好的图像显示在页面中
+    const drawFallsOnCanvas = (len) => {
+      const canvasWidth = state.canvasCtx.canvas.width
+      const canvasHeight = state.canvasCtx.canvas.height
+      if (!state.fallsCanvasCtx.canvas.width) return
+      state.canvasCtx.drawImage(
+        state.fallsCanvasCtx.canvas,
+        0,
+        0,
+        len,
+        height,
+        legendWidth,
+        0,
+        canvasWidth - legendWidth,
+        canvasHeight
+      )
+    }
+    // 绘制颜色图图例
+    const drawLegend = (canvasCtx, legendCanvasCtx, colormap) => {
+      const imageData = legendCanvasCtx.createImageData(1, colormap.length)
+      // 遍历颜色图集合
+      for (let i = 0; i < colormap.length; i++) {
+        const color = colormap[i]
+        imageData.data[imageData.data.length - i * 4 + 0] = color[0]
+        imageData.data[imageData.data.length - i * 4 + 1] = color[1]
+        imageData.data[imageData.data.length - i * 4 + 2] = color[2]
+        imageData.data[imageData.data.length - i * 4 + 3] = 255
+      }
+      legendCanvasCtx.putImageData(imageData, 0, 0)
+      canvasCtx.drawImage(
+        legendCanvasCtx.canvas,
+        0,
+        0,
+        1,
+        colormap.length,
+        (legendWidth * 3) / 4 - 5,
+        0,
+        legendWidth / 4,
+        canvasCtx.canvas.height
+      )
+      canvasCtx.font = '12px Arial'
+      canvasCtx.textAlign = 'end'
+      canvasCtx.fillStyle = '#fff'
+      canvasCtx.fillText(maxDb, (legendWidth * 3) / 4 - 10, 12)
+      canvasCtx.fillText(minDb, (legendWidth * 3) / 4 - 10, height - 6)
+    }
+
+    useImperativeHandle(ref, () => ({
+      updateChart: updateChart,
+    }))
+
+    return (
+      <div className={style.heatmap} style={{ height }} ref={heatmap}>
+        <span>{title}</span>
+      </div>
+    )
+  }
+)
+
+export default FallsChart
+```
+
+还有一点与绘制进度条时不同，在绘制进度条时我们是从数组的尾部遍历数据，然后一列一列绘制，将绘制好的图像向右偏移一个像素。而在绘制瀑布图时，我们是从数组头部开始遍历，一行一行绘制，将绘制好的图像向下移动一个像素。
+将瀑布图组件也引入到页面中进行初始化：
+
+```jsx
+// index.jsx
+// ...
+	  const fallsChartRef = useRef(null) // 新增
+// ...
+  return (
+    <div className={style.container}>
+      <div className={style.main}>
+        <div className={style.play_group}>
+					{/* ... */}
+        </div>
+        <div className={style.charts_box}>
+					<ProgressBar ref={progressBarRef} percentage={percentage} />
+          <SpectrumChart
+            yAxisMax={0}
+            yAxisMin={-140}
+            yTitle="电平(dBm)"
+            selection={true}
+            height={250}
+            ref={spectrumChartRef}
+          />
+          <FallsChart
+            title="瀑布图(dBm)"
+            maxDb={0}
+            minDb={-140}
+            height={250}
+            ref={fallsChartRef}
+          />{/*新增*/}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+## 实现播放
+
+接下来我们使用 `Interval` 去实现数据的轮询播放，在点击开始播放时，我们创建一个 `Interval` 并开始轮询数据，点击暂停播放时我们就清除这个 `Interval`。
+
+```jsx
+// index.jsx
+import React, { useState, useEffect, useRef } from 'react'
+import { Button } from 'antd'
+import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons'
+import ProgressBar from '@/components/ProgressBar'
+import SpectrumChart from '@/components/SpectrumChart'
+import FallsChart from '@/components/FallsChart'
+import style from './index.module.styl'
+
+const Home = () => {
+  const [chartData, setChartData] = useState(() => [])
+  const [percentage, setPercentage] = useState(0)
+
+  const spectrumChartRef = useRef(null)
+  const fallsChartRef = useRef(null)
+  const progressBarRef = useRef(null)
+
+  const interval = useRef(null)
+
+  // 初始化 获取数据
+  const init = () => {
+    useEffect(() => {
+      fetch('data/data.json')
+        .then((response) => response.json())
+        .then((json) => {
+          setChartData(json)
+        })
+      fetch('data/progress.json')
+        .then((response) => response.json())
+        .then((json) => {
+          const data = json.map((item) => Object.values(item))
+          progressBarRef.current && progressBarRef.current.drawProgress(data)
+        })
+    }, [])
+  }
+
+  // 播放
+  const handlerPlay = () => {
+    if (spectrumChartRef.current && fallsChartRef.current) {
+      createInterval(chartData)
+    }
+  }
+
+  // 暂停
+  const handlerPause = () => {
+    clearInterval(interval.current)
+  }
+
+  const createInterval = (data, time = 30) => {
+    let i = 0
+    interval.current = setInterval(() => {
+      if (i === data.length - 1) return clearInterval(interval.current)
+      // 计算当前播放的进度
+      const { SampleIndex, TotalSamplesCount } = data[i]
+      const percentage = (SampleIndex / TotalSamplesCount) * 100
+      // 设置进度 触发进度条指示器位移
+      setPercentage(percentage)
+      // 更新频谱图和瀑布图
+      spectrumChartRef.current.updateChart(data[i])
+      fallsChartRef.current.updateChart(data[i])
+      i++
+    }, 30)
+  }
+
+  init()
+
+  return (
+    <div className={style.container}>
+      <div className={style.main}>
+        <div className={style.play_group}>
+          <Button
+            ghost
+            size="small"
+            onClick={handlerPlay}
+            icon={<PlayCircleOutlined />}
+          >
+            开始播放
+          </Button>
+          <Button
+            ghost
+            size="small"
+            onClick={handlerPause}
+            icon={<PauseCircleOutlined />}
+          >
+            暂停播放
+          </Button>
+        </div>
+        <div className={style.charts_box}>
+          <ProgressBar ref={progressBarRef} percentage={percentage} />
+          <SpectrumChart
+            yAxisMax={0}
+            yAxisMin={-140}
+            yTitle="电平(dBm)"
+            selection={true}
+            height={250}
+            ref={spectrumChartRef}
+          />
+          <FallsChart
+            title="瀑布图(dBm)"
+            maxDb={0}
+            minDb={-140}
+            height={250}
+            ref={fallsChartRef}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+**注意：** 这里为了方便演示，所以简化了逻辑，在实际应用中应该考虑更多场景。
+
+## 总结
+
+至此，我们就实现了一个高性能的 Canvas 瀑布图和频谱图，并且能够通过控制按钮进行播放和暂停。
+
+我是荼锦，一个兴趣使然的开发者。非常感谢您阅读本文，希望本文对您了解如何实现高性能的 Canvas 瀑布图和频谱图有所帮助。
+
+尽管我在本文中尽可能地详细介绍了每一个步骤和细节，但是难免会存在一些错误和不足之处。如果您在使用本文中介绍的方法时发现了任何错误或者有更好的方法，非常欢迎您指正并提出建议，以便我能够不断改进和提升文章的质量。
+
+再次感谢您的阅读，希望本文对您有所帮助！

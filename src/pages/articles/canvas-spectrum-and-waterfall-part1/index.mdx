@@ -1,0 +1,474 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import Image from 'next/image'
+import preview from './preview.gif'
+import progress from './progress.png'
+import dataStrcture from './data_strcture.png'
+
+export const meta = {
+  author: '荼锦',
+  date: '2023-05-08',
+  title: '手把手教你实现高性能的Canvas瀑布图和频谱图(上)',
+  description: '',
+}
+
+export default (props) => <ArticleLayout meta={meta} {...props} />
+
+## 最终实现效果
+
+首先介绍下背景，因为我司是做无线电相关业务的，所以需要用到频谱图和瀑布图来做信号的可视化。你可以把它看作是将信号文件以"播视频"的方式播放给用户看。闲言少叙，我们先看下最终实现的效果是什么样的：
+
+<Image src={preview} alt="" />
+本文将介绍如何实现这样的一套"播放"图表组件以达到这种效果。 需要注意的是，本文是一篇教程向文章，为了使整体过程看起来连贯，所以我会尽可能描述的完整一些。各位也可以自行跳转到感兴趣的部分阅读相关内容。让我们开始吧！
+
+> **注意：** 由于篇幅过长，所以本文将分成上下两篇文章，上篇主要是基础的介绍以及进度条的实现。
+> 下篇则是频谱图和瀑布图的实现，以及播放数据使图表"动"起来。
+
+## 开发前的准备
+
+### 框架
+
+本文使用的是 React ，在实际生产项目中我使用的是 Vue3 + JSX 的写法，因为最近在学习 React ，刚好想着练手，所以使用 React 实现了一遍，如果文中有写法不妥的地方还请各位及时指正哈，感谢！
+
+### 数据交互
+
+本文使用 `Fetch API` 直接获取 `JSON` 数据，但在实际应用中，应该与你的后端商量好具体使用哪种方式，比如我在生产项目中就使用的是 `WebSocket`。
+
+### 其他
+
+这一整个"播放"组件我们大致可以分为四个部分：
+
+- 控制播放和暂停的按钮组
+- 进度条
+- 频谱图
+- 瀑布图
+
+其中，**进度条**和**瀑布图**是使用 Canvas 实现的，而**频谱图**则使用 HighCharts 实现。
+
+## 基础结构
+
+接下来我们先搭建一个基础的页面结构，并且获取数据：
+
+```jsx
+// index.jsx
+import React, { useState, useEffect, useRef } from 'react'
+import { Button } from 'antd'
+import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons'
+import style from './index.module.styl'
+
+const Home = () => {
+  const [chartData, setChartData] = useState(() => [])
+
+  // 初始化 获取数据
+  const init = () => {
+    useEffect(() => {
+      fetch('data/data.json')
+        .then((response) => response.json())
+        .then((json) => {
+          setChartData(json)
+        })
+      fetch('data/progress.json')
+        .then((response) => response.json())
+        .then((json) => {
+          // 这里需要处理下数据
+          const data = json.map((item) => Object.values(item))
+        })
+    }, [])
+  }
+
+  // 播放
+  const handlerPlay = () => {}
+  // 暂停
+  const handlerPause = () => {}
+
+  init()
+
+  return (
+    <div className={style.container}>
+      <div className={style.main}>
+        <div className={style.play_group}>
+          <Button
+            ghost
+            size="small"
+            onClick={handlerPlay}
+            icon={<PlayCircleOutlined />}
+          >
+            开始播放
+          </Button>
+          <Button
+            ghost
+            size="small"
+            onClick={handlerPause}
+            icon={<PauseCircleOutlined />}
+          >
+            暂停播放
+          </Button>
+        </div>
+        <div className={style.charts_box}>
+          {/* 进度条 */}
+          {/* 频谱图 */}
+          {/* 瀑布图 */}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+在上面我们定义了页面的基本结构，并且获取到数据，这里的数据是在我本地存储的 JSON 文件，在实际应用肯定是请求后端返回的数据。
+
+## 实现进度条
+
+<Image src={progress} alt="" />
+### 初始化 首先我们新建一个组件文件，把进度条抽离封装到这里。其次引入我们所需要的依赖，我们在组件内定义了三个
+`props`，`maxDb` 和 `minDb` 是用来限定功率的显示范围，超过这个阈值的话就取对应最大或最小的颜色值。`percentage`
+是当前进度，值的范围是 0 ~ 100 。
+
+```jsx // path: '@/components/ProgressBar/index.jsx'
+import React, {(useState, useEffect, useRef, useImperativeHandle)} from 'react' import
+style from './index.module.styl'
+
+const ProgressBar = React.forwardRef(
+({ maxDb = 0, minDb = -140, percentage = 0 }, ref) => {
+const progressBox = useRef(null)
+
+    useEffect(() => {
+      initComponent()
+    }, [])
+
+    // 初始化组件
+    const initComponent = () => {}
+
+    // 绘制进度条
+    // 会将该方法暴露给父组件 父组件调用时传入进度条的数据
+    const drawProgress = data => {}
+
+    useImperativeHandle(ref, () => ({
+      drawProgress: drawProgress,
+    }))
+
+    return <div className={style.progress_box} ref={progressBox}></div>
+
+}
+)
+
+export default ProgressBar
+
+```
+
+在组件内部我们定义一个用于初始化的 `initComponent()` 方法以及一个用于绘制进度条的 `drawProgress()` 方法，其中我们把 `drawProgress()` 方法暴露给父组件。再绘制之前，我们先补全初始化组件的逻辑。
+
+```jsx
+// path: '@/components/ProgressBar/index.jsx'
+// ...
+// 初始化 state
+let [state, setState] = useState({
+  boxWidth: 0,
+  boxHeight: 0,
+  canvasCtx: null,
+  fallsCanvasCtx: null,
+  colors: null,
+})
+// 初始化组件
+const initComponent = () => {
+  // 先获取进度条容器的宽度和高度
+  const boxWidth = progressBox.current.clientWidth
+  const boxHeight = progressBox.current.clientHeight
+  // 创建进度条画布
+  const [canvasCtx, fallsCanvasCtx] = createCanvas(boxWidth, boxHeight)
+  // 初始化颜色图
+  const colors = initColors()
+  // 更新到 state 中
+  setState((s) => ({
+    ...s,
+    boxWidth,
+    boxHeight,
+    canvasCtx,
+    fallsCanvasCtx,
+    colors,
+  }))
+}
+
+// 创建画布
+// 这里需要创建两个画布，一个用来绘制瀑布图，另一个将绘制好的瀑布图展示在页面上
+const createCanvas = (width, height) => {
+  // 创建用来绘制的画布
+  const fallsCanvas = document.createElement('canvas')
+  fallsCanvas.width = width
+  fallsCanvas.height = height
+  const fallsCanvasCtx = fallsCanvas.getContext('2d')
+
+  // 创建最终展示的画布
+  const canvas = document.createElement('canvas')
+  canvas.className = 'progress_canvas'
+  canvas.width = width
+  canvas.height = height
+  // 将最终展示的画布添加到容器里
+  progressBox.current.appendChild(canvas)
+  const canvasCtx = canvas.getContext('2d')
+  return [canvasCtx, fallsCanvasCtx]
+}
+
+// 初始化颜色图
+const initColors = () => {
+  if (maxDb === undefined || minDb === undefined) return
+  const len = maxDb - minDb
+  return ColorMap({
+    colormap: 'jet',
+    nshades: len,
+    format: 'rba',
+    alpha: 1,
+  })
+}
+
+// ...
+```
+
+### 绘制进度条
+
+接下来我们通过父组件调用子组件的 `drawProgress()` 方法将进度条的数据传进来。
+
+```jsx
+// index.jsx
+// ...
+	const progressBarRef = useRef(null) // 新增
+	const [percentage, setPercentage] = useState(0) // 新增
+	// 初始化 获取数据
+  const init = () => {
+    useEffect(() => {
+    	// ...
+      fetch('data/progress.json')
+        .then(response => response.json())
+        .then(json => {
+          const data = json.map(item => Object.values(item))
+          progressBarRef.current && progressBarRef.current.drawProgress(data) // 新增
+        })
+    }, [])
+  }
+// ...
+  return (
+    <div className={style.container}>
+      <div className={style.main}>
+        <div className={style.play_group}>
+					{/* ... */}
+        </div>
+        <div className={style.charts_box}>
+					<ProgressBar ref={progressBarRef} percentage={percentage} /> {/*新增*/}
+          {/* 频谱图 */}
+          {/* 瀑布图 */}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+我们在进度条上画的其实就是一个瀑布图，它是一个三维图像，横轴表示时间，纵轴表示频率，颜色深浅表示功率。
+那我们使用什么样的数据格式可以绘制这个瀑布图呢？
+通过观察我们可以发现，瀑布图每一个像素点就是一个颜色，所以我们需要一个 **容器宽度 \* 容器高度** 的二维数组，数组内每一项的值则是功率。
+拿我现在所用的数据举个例子：
+
+<Image src={dataStrcture} alt="" />
+上图中是一个 `2048 * 128` 的二维数组，那这里为什么是一个固定的数值呢？因为我们显示在屏幕上的容器宽度和高度其实是不固定的，所以需要后端给我们返回固定长度的数据，我们自己再根据实际的宽高来做数据的聚合。
+知道了实现原理后，让我们回到子组件中补全 `drawProgress()` 方法内的逻辑：
+```jsx
+// path: '@/components/ProgressBar/index.jsx'
+// ...
+    // 绘制进度条
+    // 会将该方法暴露给父组件 父组件调用时传入进度条数据
+    const drawProgress = data => {
+      // 根据容器的宽高聚合数据
+      let len = data.length
+      const scale = len / state.boxWidth
+      // 最终拿来渲染的数据
+      let arr = []
+      for (let i = len; i > 0; i -= scale) {
+        // 从数组尾部开始遍历 确保数据正确性
+        const startIndex = round(i - scale)
+        const endIndex = round(i)
+        let col = data.slice(startIndex, endIndex)
+        if (col.length > 1) {
+          let newCol = []
+          let cols = col.map(item => disposeColData(item))
+          cols[0].forEach((p, i) => {
+            let result = 0
+            for (let c = 0; c < cols.length; c++) {
+              result += cols[c][i]
+            }
+            // 取平均值
+            newCol.push(result / cols.length)
+          })
+          // 用聚合过后的数据绘制单列图像
+          drawColImgData(newCol)
+          arr.push(newCol)
+        } else {
+          // 用聚合过后的数据绘制单列图像
+          arr.push(drawColImgData(disposeColData(col[0])))
+        }
+        if (round(i - scale) === 0) break
+      }
+      state.canvasCtx.drawImage(
+        state.fallsCanvasCtx.canvas,
+        0,
+        0,
+        state.boxWidth,
+        state.boxHeight
+      )
+      // 绘制进度条的指示线
+      drawLineBox()
+    }
+
+    const drawColImgData = data => {
+      // 创建一个 宽度为1px 高度与容器高度相同的 imageData
+      const imageData = state.fallsCanvasCtx.createImageData(1, state.boxHeight)
+      // imageData 是一个长度为 width * height * 4 的 Uint8ClampedArray()
+      // 所以遍历时以4个索引为步长
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        // 获取当前数据对应的 颜色图索引
+        const cIndex = getCurrentColorIndex(data[i / 4])
+        // 取出对应颜色的 RGB 值
+        const color = state.colors[cIndex]
+        // 赋值
+        imageData.data[i + 0] = color[0]
+        imageData.data[i + 1] = color[1]
+        imageData.data[i + 2] = color[2]
+        imageData.data[i + 3] = 255
+      }
+      // 在画布的左上角绘制
+      state.fallsCanvasCtx.putImageData(imageData, 0, 0)
+      // 我们每次都在左上角画一列的图像
+      // 所以将已生成的图像向右移动一个像素
+      state.fallsCanvasCtx.drawImage(
+        state.fallsCanvasCtx.canvas,
+        1,
+        0,
+        state.boxWidth,
+        state.boxHeight
+      )
+      return data
+    }
+
+    // 处理单列图像的数据聚合
+    const disposeColData = data => {
+      let len = data.length
+      const scale = len / state.boxHeight
+      let result = []
+      for (let i = 0; i <= len; i += scale) {
+        const startIndex = round(i)
+        const endIndex = round(i + scale)
+        let points = data.slice(startIndex, endIndex)
+        // 取平均值
+        let point =
+          points.reduce((res, item) => (res += item), 0) / points.length
+        result.push(point)
+      }
+      return result
+    }
+
+    // 返回数据对应的 颜色图 color 集合索引
+    const getCurrentColorIndex = value => {
+      const min = 0
+      const max = state.colors.length - 1
+      if (value <= minDb) {
+        return min
+      } else if (value >= maxDb) {
+        return max
+      } else {
+        return round(((value - minDb) / (maxDb - minDb)) * max)
+      }
+    }
+
+// ...
+
+````
+### 绘制指示器
+指示器用来表示当前播放到哪一帧了。实现相对简单，只要给父容器一个相对定位，指示器给一个绝对定位，就可以通过控制 `left` 属性来控制指示器移动的位置了。
+```jsx
+// path: '@/components/ProgressBar/index.jsx'
+// ...
+    const drawProgress = data => {
+      // ...
+      // 绘制完瀑布图后再绘制进度条的指示线
+      drawLineBox()
+    }
+
+		let [lineBox, setLineBox] = useState(null)
+  	// 绘制指示器
+		const drawLineBox = () => {
+      const lineBox = document.createElement('div')
+      lineBox.className = 'line_box'
+      lineBox.style.height = state.boxHeight + 'px'
+      setLineBox(lineBox)
+    }
+// ...
+````
+
+随后我们再使用 `useEffect()` 在指示器被创建后，添加相应的鼠标事件，保证用户可以拖动指示器跳转到对应的进度。
+
+```jsx
+// path: '@/components/ProgressBar/index.jsx'
+// ...
+useEffect(() => {
+  if (!lineBox) return
+  progressBox.current.appendChild(lineBox)
+  progressBox.current.addEventListener('mousedown', handlerMouseDown)
+  progressBox.current.addEventListener('mousemove', throttleMouseMove)
+  progressBox.current.addEventListener('mouseup', handlerMouseUp)
+  progressBox.current.addEventListener('mouseleave', handlerMouseUp)
+}, [lineBox])
+let isMove = false
+const handlerMouseDown = (e) => {
+  if (e.target.className === 'line_box') isMove = true
+}
+
+const handlerMouseMove = (e) => {
+  if (!isMove) return
+  if (e.target.className === 'line_box') {
+    const offsetLeft = lineBox.offsetLeft
+    if (offsetLeft <= 0 || offsetLeft + lineBox.clientWidth >= state.boxWidth)
+      return
+    lineBox.style.left = e.offsetX + offsetLeft + 'px'
+  } else {
+    lineBox.style.left = e.offsetX + 'px'
+  }
+  if (
+    lineBox.offsetLeft <= 0 ||
+    lineBox.offsetLeft + lineBox.clientWidth >= state.boxWidth
+  ) {
+    isMove = false
+  }
+}
+
+const throttleMouseMove = throttle(handlerMouseMove, 4)
+
+const handlerMouseUp = (e) => {
+  if (!isMove) return
+  isMove = false
+  const percent = (lineBox.offsetLeft / state.boxWidth) * 100
+  console.log(`改变进度到: ${percent}%`)
+}
+// ...
+```
+
+### 进度联动
+
+最终我们使用 `useEffect()` 处理当进度变化时，指示器的位置也要跟着改变。
+
+```jsx
+// path: '@/components/ProgressBar/index.jsx'
+// ...
+useEffect(() => {
+  console.log('percentage changed!', percentage)
+  if (isMove) return
+  if (lineBox) {
+    lineBox.style.left = `${percentage}%`
+  }
+}, [percentage])
+// ...
+```
+
+至此，我们就得到了一个初始化后的进度条，和一个可以拖拽的指示器。
+由于篇幅过长，我将在下篇文章中更新频谱图和瀑布图的实现以及播放数据使图表"动"起来。
